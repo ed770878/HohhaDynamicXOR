@@ -31,7 +31,7 @@ all parts of the message, including the salt.
 
 The key length is supposed to be secret information.  A CCA2 attack is provided
 which will recover the key length.  This attack could be conducted as CCA1
-(batch) instead of CCA1 (adaptive), because the attack queries do not depend on
+(batch) instead of CCA2 (adaptive), because the attack queries do not depend on
 previous responses.
 
 ```
@@ -73,7 +73,7 @@ even the first salt bits may have an effect on the output.
 
 The key number of jumps is supposed to be secret information.  A CCA2 attack is
 provided which will recover the key number of jumps, up to 46 jumps.  This
-attack could be conducted as CCA1 (batch) instead of CCA1 (adaptive), because
+attack could be conducted as CCA1 (batch) instead of CCA2 (adaptive), because
 the attack queries do not depend on previous responses.
 
 ```
@@ -147,7 +147,7 @@ text A is provided to the oracle to be encrypted as B, using the same key and
 salt.  The first byte of the parity `xor(A,B)` is the same as the first byte of
 the parity `xor(X,M)`.  Therefore, the first byte can be recovered as `M =
 xor(X,A,B)`.  That makes this CCA2 attack a classic stream cipher attack.
-Furthermore, if X is zero, then the equation can be simplified to `M =
+Furthermore, if A is zero, then the equation can be simplified to `M =
 xor(X,B)`.
 
 After the first byte is known, the arbitrary plain text is sent with the first
