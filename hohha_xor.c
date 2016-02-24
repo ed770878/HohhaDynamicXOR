@@ -55,7 +55,7 @@ void hx_init(struct hx_state *hx, uint8_t *key,
 
 void hx_vdbg(struct hx_state *hx, char *when)
 {
-	vdbg("%s s1 %#010x s2 %#010x m %u",
+	vdbg("%s s1 %#010x s2 %#010x m %u\n",
 	     when, hx->s1, hx->s2, hx->m);
 }
 
