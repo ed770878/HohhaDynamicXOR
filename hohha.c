@@ -43,23 +43,23 @@ int main(int argc, char **argv)
 	char *arg_M = NULL;
 	char *arg_m = NULL;
 
-	uint8_t *raw_K;
-	size_t raw_K_len;
+	uint8_t *raw_K = NULL;
+	size_t raw_K_len = 0;
 
-	uint32_t num_j;
+	uint32_t num_j = 0;
 
-	uint8_t *raw_k;
-	size_t raw_k_len;
+	uint8_t *raw_k = NULL;
+	size_t raw_k_len = 0;
 
-	uint32_t num_l;
+	uint32_t num_l = NULL;
 
-	uint8_t *raw_S;
+	uint8_t *raw_S = NULL;
 
-	uint8_t *raw_m;
-	size_t raw_m_len;
+	uint8_t *raw_m = NULL;
+	size_t raw_m_len = 0;
 
-	char *out_m;
-	size_t out_m_len;
+	char *out_m = NULL;
+	size_t out_m_len = 0;
 
 	opterr = 1;
 	while ((rc = getopt(argc, argv, "DdeK:j:k:l:S:M:m:v")) != -1) {
