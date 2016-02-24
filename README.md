@@ -1,6 +1,6 @@
 # HohhaDynamicXOR Cryptographic Analysis
 
-This is the C reference implementation of Hohha Dynamic XOR algorithm.  An
+This is the refactored implementation of Hohha Dynamic XOR algorithm.  An
 interactive javascript demonstration of the encryption algorithm is also
 available [here](https://github.com/ed770878/hohha-js).
 
