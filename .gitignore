@@ -1,6 +1,7 @@
 .*
 *.o
 hohha
+hohha_brut
 notes/
 
 !.gitignore
