@@ -17,7 +17,7 @@ void hx_init_key(struct hx_state *hx, uint8_t *key,
 	hx->key_mask = key_len - 1;
 	hx->key_jumps = key_jumps;
 
-	hx->v = crc32_data(key, key_len);
+	hx->v = crc32_data(hx->key, key_len);
 	hx->cs = ~0;
 
 	dbg("key_mask %#xu key_jumps %u\n",
