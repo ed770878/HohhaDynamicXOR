@@ -216,6 +216,7 @@ static void hx_done(struct hx_state *hx, struct hx_state *hx_mask)
 	printf("k: %s\n", out);
 
 	free(out);
+	exit(1);
 }
 
 static void hx_brut_csum(struct hx_state *hx, struct hx_state *hx_mask,
@@ -229,11 +230,14 @@ static void hx_brut_csum(struct hx_state *hx, struct hx_state *hx_mask,
 	uint8_t xor_clash = xor_diff & xor_mask;
 	uint8_t xor_learn = xor_diff & ~xor_mask;
 
-	vdbg("hx_brut_csum\n");
+	dbg("xor_diff %#04hhx\n", xor_diff);
+	dbg("xor_mask %#04hhx\n", xor_mask);
+	dbg("xor_clash %#04hhx\n", xor_clash);
+	dbg("xor_learn %#04hhx\n", xor_learn);
 
 	if (!xor_clash) {
-		vdbg("we learn something!\n");
-		hx_mask->m |= ror32(xor_mask, hx_mask->cs);
+		dbg("proceed at %zu\n", raw_len);
+		hx_mask->m |= ror32(0xff, hx_mask->cs);
 		hx_mask->v |= ror32(xor_learn, hx_mask->cs);
 		hx_mask->cs = (hx_mask->cs + 1) & 31;
 		hx_mask->opt = 0;
@@ -244,6 +248,8 @@ static void hx_brut_csum(struct hx_state *hx, struct hx_state *hx_mask,
 
 		*hx = old_hx;
 		*hx_mask = old_hx_mask;
+	} else {
+		dbg("backtrack at %zu\n", raw_len);
 	}
 }
 
@@ -280,8 +286,9 @@ static void hx_brut_jump(struct hx_state *hx, struct hx_state *hx_mask,
 			*hx = old_hx;
 		}
 		hx->key[hx->m] = 0;
+		hx_mask->key[hx->m] = 0;
+		*hx_mask = old_hx_mask;
 	}
-	*hx_mask = old_hx_mask;
 }
 
 static void hx_brut(struct hx_state *hx, struct hx_state *hx_mask,
