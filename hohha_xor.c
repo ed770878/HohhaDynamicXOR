@@ -10,11 +10,16 @@ void hx_init_key(struct hx_state *hx, uint8_t *key,
 	if (key)
 		memcpy(hx->key, key, key_len);
 
-	hx->key_len = key_len;
+	hx->key_mask = key_len - 1;
 	hx->key_jumps = key_jumps;
 
-	dbg("key_len %u key_jumps %u\n",
-	    hx->key_len, hx->key_jumps);
+	hx->v = crc32_data(key, key_len);
+	hx->cs = ~0;
+
+	dbg("key_mask %#xu key_jumps %u\n",
+	    hx->key_mask, hx->key_jumps);
+	dbg("cs %#x v %#x\n",
+	    hx->cs, hx->v);
 }
 
 void hx_init_salt(struct hx_state *hx,
@@ -23,19 +28,10 @@ void hx_init_salt(struct hx_state *hx,
 	hx->s1 = s1;
 	hx->s2 = s2;
 	hx->m = (s1 >> 24) * (s2 >> 24);
-	hx->m %= hx->key_len;
+	hx->m &= hx->key_mask;
 
 	dbg("s1 %#x s2 %#x m %u\n",
 	    hx->s1, hx->s2, hx->m);
-}
-
-void hx_init_crc(struct hx_state *hx)
-{
-	hx->cs = ~0;
-	hx->v = crc32_data(hx->key, hx->key_len);
-
-	dbg("cs %#x v %#x\n",
-	    hx->cs, hx->v);
 }
 
 void hx_init_opt(struct hx_state *hx, uint32_t opt)
@@ -50,24 +46,13 @@ void hx_init(struct hx_state *hx, uint8_t *key,
 {
 	hx_init_key(hx, key, key_len, key_jumps);
 	hx_init_salt(hx, s1, s2);
-	hx_init_crc(hx);
 	hx_init_opt(hx, opt);
 }
 
 void hx_vdbg(struct hx_state *hx, char *when)
 {
-	int i;
-
-	if (hohha_dbg_level > 2) {
-		fprintf(stderr, "%s s1 %#010x s2 %#010x m %-3u k 0x",
-		     when, hx->s1, hx->s2, hx->m);
-
-		for (i = 0; i < hx->key_len; ++i)
-			fprintf(stderr, "%02hhx", hx->key[i]);
-
-		fprintf(stderr, "\n");
-	}
-
+	vdbg("%s s1 %#010x s2 %#010x m %u",
+	     when, hx->s1, hx->s2, hx->m);
 }
 
 void hx_jump0(struct hx_state *hx)
@@ -75,7 +60,7 @@ void hx_jump0(struct hx_state *hx)
 	hx->s1 ^= hx->key[hx->m];
 	hx->key[hx->m] = u8(hx->s2);
 	hx->m ^= hx->s2; /* Note: s2 not v (see jump2) */
-	hx->m %= hx->key_len;
+	hx->m &= hx->key_mask;
 	hx->s2 = rol32(hx->s2, 1);
 
 	hx_vdbg(hx, "jump0");
@@ -86,7 +71,7 @@ void hx_jump1(struct hx_state *hx)
 	hx->s2 ^= hx->key[hx->m];
 	hx->key[hx->m] = u8(hx->s1);
 	hx->m ^= hx->v; /* Note: v not s1 (see jump3) */
-	hx->m %= hx->key_len;
+	hx->m &= hx->key_mask;
 	hx->s1 = ror32(hx->s1, 1);
 
 	hx_vdbg(hx, "jump1");
@@ -97,7 +82,7 @@ void hx_jump2(struct hx_state *hx)
 	hx->s1 ^= hx->key[hx->m];
 	hx->key[hx->m] = u8(hx->s2);
 	hx->m ^= hx->v; /* Note: v not s2 (see jump0) */
-	hx->m %= hx->key_len;
+	hx->m &= hx->key_mask;
 	hx->s2 = rol32(hx->s2, 1);
 
 	hx_vdbg(hx, "jump2");
@@ -108,7 +93,7 @@ void hx_jump3(struct hx_state *hx)
 	hx->s2 ^= hx->key[hx->m];
 	hx->key[hx->m] = u8(hx->s1);
 	hx->m ^= hx->s1; /* Note: s1 not v (see jump1) */
-	hx->m %= hx->key_len;
+	hx->m &= hx->key_mask;
 	hx->s1 = ror32(hx->s1, 1);
 
 	hx_vdbg(hx, "jump3");

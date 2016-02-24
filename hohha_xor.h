@@ -4,7 +4,7 @@
 #include <stdint.h>
 
 struct hx_state {
-	uint32_t key_len;	/* number of bytes body */
+	uint32_t key_mask;	/* key length mask */
 	uint32_t key_jumps;	/* number of "jumps" */
 	uint32_t s1;		/* first "salt" or "seed" */
 	uint32_t s2;		/* second "salt" or "seed" */
@@ -37,13 +37,6 @@ void hx_init_key(struct hx_state *hx, uint8_t *key,
  */
 void hx_init_salt(struct hx_state *hx,
 		 uint32_t s1, uint32_t s2);
-
-/**
- * Initialize the "cs" and "v" of the state.
- *
- * The key data must already be initialized for "v".
- */
-void hx_init_crc(struct hx_state *hx);
 
 /**
  * Set options to affect running the algorithm.
