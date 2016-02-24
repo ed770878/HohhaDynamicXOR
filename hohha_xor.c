@@ -4,11 +4,15 @@
 #include "hohha_xor.h"
 #include "hohha_util.h"
 
+static void (*hx_jump_fn(int key_jumps))(struct hx_state *hx);
+
 void hx_init_key(struct hx_state *hx, uint8_t *key,
 		 uint32_t key_len, uint32_t key_jumps)
 {
 	if (key)
 		memcpy(hx->key, key, key_len);
+
+	hx->jump_fn = hx_jump_fn(key_jumps);
 
 	hx->key_mask = key_len - 1;
 	hx->key_jumps = key_jumps;
@@ -101,6 +105,11 @@ void hx_jump3(struct hx_state *hx)
 
 void hx_jump(struct hx_state *hx)
 {
+	hx->jump_fn(hx);
+}
+
+static void hx_jump_any(struct hx_state *hx)
+{
 	uint32_t j = 1, jumps = hx->key_jumps;
 
 	/* Note: reference alg always jumps at least twice */
@@ -122,6 +131,90 @@ void hx_jump(struct hx_state *hx)
 
 		hx_jump3(hx);
 	}
+}
+
+static void hx_jump_opt2(struct hx_state *hx)
+{
+	hx_vdbg(hx, "start");
+	hx_jump0(hx);
+	hx_jump1(hx);
+}
+
+static void hx_jump_opt3(struct hx_state *hx)
+{
+	hx_vdbg(hx, "start");
+	hx_jump0(hx);
+	hx_jump1(hx);
+	hx_jump2(hx);
+}
+
+static void hx_jump_opt4(struct hx_state *hx)
+{
+	hx_vdbg(hx, "start");
+	hx_jump0(hx);
+	hx_jump1(hx);
+	hx_jump2(hx);
+	hx_jump3(hx);
+}
+
+static void hx_jump_opt5(struct hx_state *hx)
+{
+	hx_vdbg(hx, "start");
+	hx_jump0(hx);
+	hx_jump1(hx);
+	hx_jump2(hx);
+	hx_jump3(hx);
+	hx_jump2(hx);
+}
+
+static void hx_jump_opt6(struct hx_state *hx)
+{
+	hx_vdbg(hx, "start");
+	hx_jump0(hx);
+	hx_jump1(hx);
+	hx_jump2(hx);
+	hx_jump3(hx);
+	hx_jump2(hx);
+	hx_jump3(hx);
+}
+
+static void hx_jump_opt7(struct hx_state *hx)
+{
+	hx_vdbg(hx, "start");
+	hx_jump0(hx);
+	hx_jump1(hx);
+	hx_jump2(hx);
+	hx_jump3(hx);
+	hx_jump2(hx);
+	hx_jump3(hx);
+	hx_jump2(hx);
+}
+
+static void hx_jump_opt8(struct hx_state *hx)
+{
+	hx_vdbg(hx, "start");
+	hx_jump0(hx);
+	hx_jump1(hx);
+	hx_jump2(hx);
+	hx_jump3(hx);
+	hx_jump2(hx);
+	hx_jump3(hx);
+	hx_jump2(hx);
+	hx_jump3(hx);
+}
+
+static void (*hx_jump_fn(int key_jumps))(struct hx_state *hx)
+{
+	switch (key_jumps) {
+	case 2: return hx_jump_opt2;
+	case 3: return hx_jump_opt3;
+	case 4: return hx_jump_opt4;
+	case 5: return hx_jump_opt5;
+	case 6: return hx_jump_opt6;
+	case 7: return hx_jump_opt7;
+	case 8: return hx_jump_opt8;
+	}
+	return hx_jump_any;
 }
 
 uint8_t hx_step_xor(struct hx_state *hx)

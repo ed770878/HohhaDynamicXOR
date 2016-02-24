@@ -4,6 +4,9 @@
 #include <stdint.h>
 
 struct hx_state {
+	/* maybe a loop unrolled jump function */
+	void (*jump_fn)(struct hx_state *hx);
+
 	uint32_t key_mask;	/* key length mask */
 	uint32_t key_jumps;	/* number of "jumps" */
 	uint32_t s1;		/* first "salt" or "seed" */
