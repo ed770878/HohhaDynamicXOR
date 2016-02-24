@@ -204,8 +204,18 @@ int main(int argc, char **argv)
 
 static void hx_done(struct hx_state *hx, struct hx_state *hx_mask)
 {
+	char *out = malloc((hx->key_mask + 1) * 4);
+
 	printf("--------------------------------\n");
 	printf("v: %#08x (%#08x)\n", hx_mask->v, hx_mask->cs);
+
+	b64_encode(hx->key, hx->key_mask + 1, out, hx->key_mask + 1);
+	printf("k: %s\n", out);
+
+	b64_encode(hx_mask->key, hx->key_mask + 1, out, hx->key_mask + 1);
+	printf("k: %s\n", out);
+
+	free(out);
 }
 
 static void hx_brut_csum(struct hx_state *hx, struct hx_state *hx_mask,
@@ -219,10 +229,14 @@ static void hx_brut_csum(struct hx_state *hx, struct hx_state *hx_mask,
 	uint8_t xor_clash = xor_diff & xor_mask;
 	uint8_t xor_learn = xor_diff & ~xor_mask;
 
+	vdbg("hx_brut_csum\n");
+
 	if (!xor_clash) {
+		vdbg("we learn something!\n");
 		hx_mask->m |= ror32(xor_mask, hx_mask->cs);
 		hx_mask->v |= ror32(xor_learn, hx_mask->cs);
 		hx_mask->cs = (hx_mask->cs + 1) & 31;
+		hx_mask->opt = 0;
 
 		hx->v ^= xor_learn;
 
@@ -252,10 +266,12 @@ static void hx_brut_jump(struct hx_state *hx, struct hx_state *hx_mask,
 	uint32_t jump = hx_mask->opt++;
 
 	if (hx_mask->key[hx->m] == 0xff) {
+		vdbg("hx_brut_jump again\n");
 		hx_brut_jump_fn(jump)(hx);
 		hx_brut(hx, hx_mask, raw_m, raw_x, raw_len);
 		*hx = old_hx;
 	} else {
+		vdbg("hx_brut_jump guess m=%u\n", hx->m);
 		hx_mask->key[hx->m] = 0xff;
 		for (uint32_t x = 0; x <= 0xff; ++x) {
 			hx->key[hx->m] = x;
@@ -271,6 +287,7 @@ static void hx_brut_jump(struct hx_state *hx, struct hx_state *hx_mask,
 static void hx_brut(struct hx_state *hx, struct hx_state *hx_mask,
 		    uint8_t *raw_m, uint8_t *raw_x, size_t raw_len)
 {
+	vdbg("hx_brut raw_len=%zu\n", raw_len);
 	if (!raw_len) {
 		hx_done(hx, hx_mask);
 		return;
