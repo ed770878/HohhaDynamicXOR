@@ -1,6 +1,5 @@
 .*
 *.o
-HohhaDynamicXOR
-HohhaHarness
+hohha
 
 !.gitignore
