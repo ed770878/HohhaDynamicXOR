@@ -1,7 +1,7 @@
 LDFLAGS =
-CFLAGS = -g -O0 -Wall
+CFLAGS = -g -O3 -Wall
 
 hohha: hohha.o hohha_util.o hohha_xor.o
 
 clean:
-	rm hohha hohha_util.o hohha_xor.o
+	rm -f hohha hohha.o hohha_util.o hohha_xor.o
