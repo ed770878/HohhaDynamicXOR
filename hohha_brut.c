@@ -1,4 +1,5 @@
 #include <errno.h>
+#include <signal.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -8,7 +9,15 @@
 #include "hohha_xor.h"
 #include "hohha_util.h"
 
-static void hx_done(struct hx_state *hx_orig,
+volatile sig_atomic_t seen_sigusr1;
+volatile sig_atomic_t done_sigusr1;
+static void catch_sigusr1(int sig)
+{
+	++seen_sigusr1;
+}
+
+static void hx_done(FILE *f, char *note,
+		    struct hx_state *hx_orig,
 		    struct hx_state *hx_mask);
 
 static void hx_brut(struct hx_state *hx,
@@ -202,6 +211,9 @@ int main(int argc, char **argv)
 	/* Mask of guessed values of hx */
 	hx_mask = hx_zalloc(sizeof(*hx_mask) + num_l);
 
+	/* Let user request to see progress */
+	signal(SIGUSR1, catch_sigusr1);
+
 	/* Search for a solution */
 	hx_brut(hx, hx_orig, hx_mask,
 		raw_m, raw_x, 0, raw_x_len);
@@ -209,22 +221,23 @@ int main(int argc, char **argv)
 	return 0;
 }
 
-static void hx_done(struct hx_state *hx_orig,
+static void hx_done(FILE *f, char *note,
+		    struct hx_state *hx_orig,
 		    struct hx_state *hx_mask)
 {
 	size_t key_len = hx_orig->key_mask + 1;
 	size_t out_len = (key_len * 4 / 3 + 3) & ~3;
 	char *out = malloc(out_len + 1);
 
-	printf("--------------------------------\n");
+	fprintf(f, "--%s------------------------------\n", note);
 
-	printf("v: %#08x (%#08x)\n", hx_orig->v, hx_mask->v);
+	fprintf(f, "v: %#08x (%#08x)\n", hx_orig->v, hx_mask->v);
 
 	b64_encode(hx_orig->key, key_len, out, out_len + 1);
-	printf("k: %s\n", out);
+	fprintf(f, "k: %s\n", out);
 
 	b64_encode(hx_mask->key, key_len, out, out_len + 1);
-	printf("m: %s\n", out);
+	fprintf(f, "m: %s\n", out);
 
 	free(out);
 }
@@ -364,8 +377,15 @@ static void hx_brut(struct hx_state *hx,
 		    size_t raw_idx, size_t raw_len)
 {
 	if (raw_idx == raw_len) {
-		hx_done(hx_orig, hx_mask);
+		hx_done(stdout, "done----", hx_orig, hx_mask);
 		return;
+	}
+
+	if (done_sigusr1 != seen_sigusr1) {
+		done_sigusr1 = seen_sigusr1;
+		hx_done(stderr, "progress", hx_orig, hx_mask);
+		fprintf(stderr, "current jump %u at %zu of %zu\n",
+			hx_mask->key_jumps, raw_idx, raw_len);
 	}
 
 	if (hx_mask->key_jumps == hx->key_jumps) {
