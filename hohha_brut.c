@@ -8,9 +8,14 @@
 #include "hohha_xor.h"
 #include "hohha_util.h"
 
-static void hx_done(struct hx_state *hx, struct hx_state *hx_mask);
-static void hx_brut(struct hx_state *hx, struct hx_state *hx_mask,
-		    uint8_t *raw_m, uint8_t *raw_x, size_t raw_len);
+static void hx_done(struct hx_state *hx_orig,
+		    struct hx_state *hx_mask);
+
+static void hx_brut(struct hx_state *hx,
+		    struct hx_state *hx_orig,
+		    struct hx_state *hx_mask,
+		    uint8_t *raw_m, uint8_t *raw_x,
+		    size_t raw_idx, size_t raw_len);
 
 static void *hx_zalloc(size_t size)
 {
@@ -25,7 +30,7 @@ static void *hx_zalloc(size_t size)
 
 int main(int argc, char **argv)
 {
-	struct hx_state *hx, *hx_mask;
+	struct hx_state *hx, *hx_orig, *hx_mask;
 
 	int rc, errflg = 0;
 
@@ -180,16 +185,8 @@ int main(int argc, char **argv)
 		exit(1);
 	}
 
+	/* Running values of hx */
 	hx = hx_zalloc(sizeof(*hx) + num_l);
-
-	hx_mask = hx_zalloc(sizeof(*hx_mask) + num_l);
-	/* What have we guessed about hx:
-	 *   key: mask of bits we have guessed of key
-	 *   m: mask of bits we have guessed of v
-	 *   v: our guess of initial v
-	 *   cs: current rotate left of v
-	 *   opt: current jump number
-	 */
 
 	hx_init(hx, NULL, num_l, num_j,
 		*(uint32_t *)(raw_S),
@@ -197,112 +194,187 @@ int main(int argc, char **argv)
 		0);
 	hx->v = 0;
 
-	hx_brut(hx, hx_mask, raw_m, raw_x, raw_x_len);
+	/* Guessed original values of hx */
+	hx_orig = hx_zalloc(sizeof(*hx_mask) + num_l);
+
+	*hx_orig = *hx;
+
+	/* Mask of guessed values of hx */
+	hx_mask = hx_zalloc(sizeof(*hx_mask) + num_l);
+
+	/* Search for a solution */
+	hx_brut(hx, hx_orig, hx_mask,
+		raw_m, raw_x, 0, raw_x_len);
 
 	return 0;
 }
 
-static void hx_done(struct hx_state *hx, struct hx_state *hx_mask)
+static void hx_done(struct hx_state *hx_orig,
+		    struct hx_state *hx_mask)
 {
-	char *out = malloc((hx->key_mask + 1) * 4);
+	size_t key_len = hx_orig->key_mask + 1;
+	size_t out_len = (key_len * 4 / 3 + 3) & ~3;
+	char *out = malloc(out_len + 1);
 
 	printf("--------------------------------\n");
-	printf("v: %#08x (%#08x)\n", hx_mask->v, hx_mask->cs);
 
-	b64_encode(hx->key, hx->key_mask + 1, out, hx->key_mask + 1);
+	printf("v: %#08x (%#08x)\n", hx_orig->v, hx_mask->v);
+
+	b64_encode(hx_orig->key, key_len, out, out_len + 1);
 	printf("k: %s\n", out);
 
-	b64_encode(hx_mask->key, hx->key_mask + 1, out, hx->key_mask + 1);
-	printf("k: %s\n", out);
+	b64_encode(hx_mask->key, key_len, out, out_len + 1);
+	printf("m: %s\n", out);
 
 	free(out);
-	exit(1);
 }
 
-static void hx_brut_csum(struct hx_state *hx, struct hx_state *hx_mask,
-			 uint8_t *raw_m, uint8_t *raw_x, size_t raw_len)
+static void hx_brut_step(struct hx_state *hx,
+			 struct hx_state *hx_orig,
+			 struct hx_state *hx_mask,
+			 uint8_t *raw_m, uint8_t *raw_x,
+			 size_t raw_idx, size_t raw_len)
 {
 	struct hx_state old_hx = *hx;
+	struct hx_state old_hx_orig = *hx_orig;
 	struct hx_state old_hx_mask = *hx_mask;
 
-	uint8_t xor_diff = *raw_m ^ *raw_x ^ hx->v ^ hx->s1 ^ hx->s2;
-	uint8_t xor_mask = rol32(hx_mask->m, hx_mask->cs);
+	/* What bits are different from the solution? */
+	uint8_t xor_diff = raw_m[raw_idx] ^ raw_x[raw_idx] ^ hx_step_xor(hx);
+
+	/* What bits are not allowed to be different? */
+	uint8_t xor_mask = rol32(hx_mask->v, raw_idx & 31);
+
+	/* These bits clash: they are not allowed to be different */
 	uint8_t xor_clash = xor_diff & xor_mask;
+	/* These bits learn: update the guess to match the solution */
 	uint8_t xor_learn = xor_diff & ~xor_mask;
 
-	dbg("xor_diff %#04hhx\n", xor_diff);
-	dbg("xor_mask %#04hhx\n", xor_mask);
-	dbg("xor_clash %#04hhx\n", xor_clash);
-	dbg("xor_learn %#04hhx\n", xor_learn);
+	vdbg("xor_diff %#04hhx\n", xor_diff);
+	vdbg("xor_mask %#04hhx\n", xor_mask);
+	vdbg("xor_clash %#04hhx\n", xor_clash);
+	vdbg("xor_learn %#04hhx\n", xor_learn);
 
 	if (!xor_clash) {
-		dbg("proceed at %zu\n", raw_len);
-		hx_mask->m |= ror32(0xff, hx_mask->cs);
-		hx_mask->v |= ror32(xor_learn, hx_mask->cs);
-		hx_mask->cs = (hx_mask->cs + 1) & 31;
-		hx_mask->opt = 0;
+		if (raw_idx < 10 || raw_len - raw_idx < 10)
+		dbg("proceed at %zu of %zu\n", raw_idx, raw_len);
 
+		/* Correct the state and update the guess */
 		hx->v ^= xor_learn;
+		hx_orig->v |= ror32(xor_learn, raw_idx & 31);
+		hx_mask->v |= ror32(0xff, raw_idx & 31);
 
-		hx_brut(hx, hx_mask, raw_m + 1, raw_x + 1, raw_len - 1);
+		/* Update the state by taking the step */
+		hx_mask->key_jumps = 0;
+		hx_step_crc(hx, raw_m[raw_idx]);
 
+		/* Proceed to the next step */
+		hx_brut(hx, hx_orig, hx_mask,
+			raw_m, raw_x,
+			raw_idx + 1, raw_len);
+
+		/* Restore the previous state */
 		*hx = old_hx;
+		*hx_orig = old_hx_orig;
 		*hx_mask = old_hx_mask;
-	} else {
-		dbg("backtrack at %zu\n", raw_len);
+	}
+
+	if (raw_idx < 10 || raw_len - raw_idx < 10)
+	dbg("backtrack at %zu of %zu\n", raw_idx, raw_len);
+}
+
+static void hx_jump_n(struct hx_state *hx, uint32_t jump_n)
+{
+	uint32_t j0 = !!(jump_n & 1);
+	uint32_t j1 = !!(jump_n & ~1);
+
+	switch (j0 | (j1 << 1)) {
+	case 0: hx_jump0(hx); break;
+	case 1: hx_jump1(hx); break;
+	case 2: hx_jump2(hx); break;
+	case 3: hx_jump3(hx);
 	}
 }
 
-static void (*hx_brut_jump_fn(uint32_t j))(struct hx_state *hx)
-{
-	if (j == 0)
-		return hx_jump0;
-	if (j == 1)
-		return hx_jump1;
-	if (!(j & 1))
-		return hx_jump2;
-	return hx_jump3;
-}
-
-static void hx_brut_jump(struct hx_state *hx, struct hx_state *hx_mask,
-			 uint8_t *raw_m, uint8_t *raw_x, size_t raw_len)
+static void hx_brut_jump(struct hx_state *hx,
+			 struct hx_state *hx_orig,
+			 struct hx_state *hx_mask,
+			 uint8_t *raw_m, uint8_t *raw_x,
+			 size_t raw_idx, size_t raw_len)
 {
 	struct hx_state old_hx = *hx;
-	struct hx_state old_hx_mask = *hx_mask;
-	uint32_t jump = hx_mask->opt++;
+	uint32_t jump_n = hx_mask->key_jumps++;
+	uint32_t m = hx->m;
 
-	if (hx_mask->key[hx->m] == 0xff) {
-		vdbg("hx_brut_jump again\n");
-		hx_brut_jump_fn(jump)(hx);
-		hx_brut(hx, hx_mask, raw_m, raw_x, raw_len);
+	if (hx_mask->key[m] == 0xff) {
+		if (raw_idx < 10 || raw_len - raw_idx < 10)
+		dbg("jump %u at %zu of %zu existing key[%u]\n",
+		     jump_n, raw_idx, raw_len, m);
+
+		/* Update the state by taking the jump */
+		hx_jump_n(hx, jump_n);
+
+		/* Proceed to the next step */
+		hx_brut(hx, hx_orig, hx_mask,
+			raw_m, raw_x,
+			raw_idx, raw_len);
+
+		/* Restore the previous state */
 		*hx = old_hx;
 	} else {
-		vdbg("hx_brut_jump guess m=%u\n", hx->m);
-		hx_mask->key[hx->m] = 0xff;
+		/* We will be making a guess for this m */
+		hx_mask->key[m] = 0xff;
+
 		for (uint32_t x = 0; x <= 0xff; ++x) {
-			hx->key[hx->m] = x;
-			hx_brut_jump_fn(jump)(hx);
-			hx_brut(hx, hx_mask, raw_m, raw_x, raw_len);
+			if (raw_idx < 10 || raw_len - raw_idx < 10)
+			dbg("jump %u at %zu of %zu with guess key[%u]=%#04x\n",
+			     jump_n, raw_idx, raw_len, m, x);
+
+			/* Make a guess for this m */
+			hx->key[m] = x;
+			hx_orig->key[m] = x;
+
+			/* Update the state by taking the jump */
+			hx_jump_n(hx, jump_n);
+
+			/* Proceed to the next step */
+			hx_brut(hx, hx_orig, hx_mask,
+				raw_m, raw_x,
+				raw_idx, raw_len);
+
+			/* Restore the previous state */
 			*hx = old_hx;
 		}
+
+		/* Remove the guess for this m */
 		hx->key[hx->m] = 0;
-		hx_mask->key[hx->m] = 0;
-		*hx_mask = old_hx_mask;
+		hx_orig->key[m] = 0;
+		hx_mask->key[m] = 0;
 	}
+
+	if (raw_idx < 10 || raw_len - raw_idx < 10)
+	dbg("backtrack jump %u at %zu of %zu\n",
+	     jump_n, raw_idx, raw_len);
 }
 
-static void hx_brut(struct hx_state *hx, struct hx_state *hx_mask,
-		    uint8_t *raw_m, uint8_t *raw_x, size_t raw_len)
+static void hx_brut(struct hx_state *hx,
+		    struct hx_state *hx_orig,
+		    struct hx_state *hx_mask,
+		    uint8_t *raw_m, uint8_t *raw_x,
+		    size_t raw_idx, size_t raw_len)
 {
-	vdbg("hx_brut raw_len=%zu\n", raw_len);
-	if (!raw_len) {
-		hx_done(hx, hx_mask);
+	if (raw_idx == raw_len) {
+		hx_done(hx_orig, hx_mask);
 		return;
 	}
 
-	if (hx_mask->opt == hx->key_jumps) {
-		hx_brut_csum(hx, hx_mask, raw_m, raw_x, raw_len);
+	if (hx_mask->key_jumps == hx->key_jumps) {
+		hx_brut_step(hx, hx_orig, hx_mask,
+			     raw_m, raw_x,
+			     raw_idx, raw_len);
 	} else {
-		hx_brut_jump(hx, hx_mask, raw_m, raw_x, raw_len);
+		hx_brut_jump(hx, hx_orig, hx_mask,
+			     raw_m, raw_x,
+			     raw_idx, raw_len);
 	}
 }
