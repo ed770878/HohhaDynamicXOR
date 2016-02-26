@@ -9,6 +9,8 @@
 #include "hohha_xor.h"
 #include "hohha_util.h"
 
+static int hxb_dbg_level;
+
 volatile sig_atomic_t seen_sigusr1;
 volatile sig_atomic_t done_sigusr1;
 static void catch_sigusr1(int sig)
@@ -120,7 +122,7 @@ int main(int argc, char **argv)
 	size_t raw_x_len = 0;
 
 	opterr = 1;
-	while ((rc = getopt(argc, argv, "j:l:S:m:x:v")) != -1) {
+	while ((rc = getopt(argc, argv, "j:l:S:m:x:vz")) != -1) {
 		switch (rc) {
 
 		case 'j': /* key jumps: numeric */
@@ -141,6 +143,9 @@ int main(int argc, char **argv)
 
 		case 'v': /* increase verbosity */
 			++hohha_dbg_level;
+			break;
+		case 'z': /* increase debugging */
+			++hxb_dbg_level;
 			break;
 
 		case ':':
@@ -177,6 +182,8 @@ int main(int argc, char **argv)
 			"\n"
 			"  -v\n"
 			"      Increase debug verbosity (may be repeated)\n"
+			"  -z\n"
+			"      Increase debug assertions (may be repeated)\n"
 			"\n",
 			argv[0]);
 		exit(2);
@@ -300,11 +307,40 @@ static void hx_done(FILE *f, char *note, struct hxb_state *hxb)
 	free(out);
 }
 
+static void hxb_check(struct hxb_state *hxb, char *where)
+{
+	struct hx_state *hx;
+	uint8_t *ciph;
+
+	if (!hxb_dbg_level)
+		return;
+
+	hx = malloc(hxb->sz_hx);
+	ciph = malloc(hxb->idx);
+
+	memcpy(hx, hxb->hx_orig, hxb->sz_hx);
+
+	hx_encrypt(hx, hxb->mesg, ciph, hxb->idx);
+
+	if (memcmp(ciph, hxb->ciph, hxb->idx)) {
+		hx_done(stderr, where, hxb);
+		fprintf(stderr, "current jump %zu at %zu of %zu\n",
+			hxb->jmp, hxb->idx, hxb->len);
+		exit(1);
+	}
+
+	free(hx);
+	free(ciph);
+}
+
+
 static void hx_brut_step(struct hxb_state *hxb)
 {
 	struct hx_state old_hx = *hxb->hx;
 	struct hx_state old_hx_orig = *hxb->hx_orig;
 	struct hx_state old_hx_mask = *hxb->hx_mask;
+
+	hxb_check(hxb, "#step#A#");
 
 	uint8_t xor_oops = hxb_step_xor(hxb) ^ hx_step_xor(hxb->hx);
 	uint8_t xor_mask = hxb_mask_xor(hxb);
@@ -336,6 +372,8 @@ static void hx_brut_step(struct hxb_state *hxb)
 
 	if (hxb_interesting(hxb))
 		dbg("backtrack at %zu of %zu\n", hxb->idx, hxb->len);
+
+	hxb_check(hxb, "#step#B#");
 }
 
 static void hx_brut_jump(struct hxb_state *hxb)
@@ -343,6 +381,8 @@ static void hx_brut_jump(struct hxb_state *hxb)
 	struct hx_state old_hx = *hxb->hx;
 	size_t j = hxb->jmp++;
 	size_t m = hxb->hx->m;
+
+	hxb_check(hxb, "#jump#A#");
 
 	if (hxb_have_key(hxb, m)) {
 		if (hxb_interesting(hxb))
@@ -354,6 +394,8 @@ static void hx_brut_jump(struct hxb_state *hxb)
 		hx_brut(hxb);
 
 		*hxb->hx = old_hx;
+
+		hxb_check(hxb, "#jump#B#");
 	} else {
 		hxb_mask_key(hxb, m, ~0);
 
@@ -372,6 +414,8 @@ static void hx_brut_jump(struct hxb_state *hxb)
 
 		hxb_guess_key(hxb, m, 0);
 		hxb_mask_key(hxb, m, 0);
+
+		hxb_check(hxb, "#jump#C#");
 	}
 
 	if (hxb_interesting(hxb))
