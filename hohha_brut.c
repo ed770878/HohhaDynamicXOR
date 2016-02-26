@@ -52,16 +52,16 @@ static uint8_t hxb_step_xor(struct hxb_state *hxb)
 	return hxb->mesg[hxb->idx] ^ hxb->ciph[hxb->idx];
 }
 
-static uint8_t hxb_mask_xor(struct hxb_state *hxb)
+static uint32_t hxb_mask_v(struct hxb_state *hxb)
 {
-	return u8(rol32(hxb->hx_mask->v, hxb->idx & 31));
+	return rol32(hxb->hx_mask->v, hxb->idx & 31);
 }
 
-static void hxb_learn_xor(struct hxb_state *hxb, uint8_t xor)
+static void hxb_learn_v(struct hxb_state *hxb, uint32_t mask, uint32_t xor)
 {
 	hxb->hx->v ^= xor;
 	hxb->hx_orig->v |= ror32(xor, hxb->idx & 31);
-	hxb->hx_mask->v |= ror32(0xff, hxb->idx & 31);
+	hxb->hx_mask->v |= ror32(mask, hxb->idx & 31);
 }
 
 static void hxb_step_crc(struct hxb_state *hxb)
@@ -345,7 +345,7 @@ static void hx_brut_step(struct hxb_state *hxb)
 	hxb_check(hxb, "#step#A#");
 
 	uint8_t xor_oops = hxb_step_xor(hxb) ^ hx_step_xor(hxb->hx);
-	uint8_t xor_mask = hxb_mask_xor(hxb);
+	uint8_t xor_mask = hxb_mask_v(hxb);
 	uint8_t xor_clash = xor_oops & xor_mask;
 	uint8_t xor_learn = xor_oops & ~xor_mask;
 
@@ -358,7 +358,7 @@ static void hx_brut_step(struct hxb_state *hxb)
 		if (hxb_interesting(hxb))
 			dbg("proceed at %zu of %zu\n", hxb->idx, hxb->len);
 
-		hxb_learn_xor(hxb, xor_learn);
+		hxb_learn_v(hxb, 0xff, xor_learn);
 		hxb_step_crc(hxb);
 		++hxb->idx;
 		hxb->jmp = 0;
@@ -378,7 +378,7 @@ static void hx_brut_step(struct hxb_state *hxb)
 	hxb_check(hxb, "#step#B#");
 }
 
-static void hx_brut_jump(struct hxb_state *hxb)
+static void hx_brut_jump_next(struct hxb_state *hxb)
 {
 	struct hx_state old_hx = *hxb->hx;
 	size_t j = hxb->jmp++;
@@ -425,6 +425,34 @@ static void hx_brut_jump(struct hxb_state *hxb)
 		    j, hxb->idx, hxb->len);
 
 	hxb->jmp = j;
+}
+
+static void hx_brut_jump(struct hxb_state *hxb)
+{
+	struct hx_state old_hx = *hxb->hx;
+	struct hx_state old_hx_orig = *hxb->hx_orig;
+	struct hx_state old_hx_mask = *hxb->hx_mask;
+	uint32_t m_mask, v_mask, v_learn;
+
+	m_mask = hxb->hx->key_mask;
+	v_mask = m_mask & ~hxb_mask_v(hxb);
+
+	if (!v_mask || !(hxb->jmp & 1) == !(hxb->jmp & ~1)) {
+		hx_brut_jump_next(hxb);
+	} else {
+		for(v_learn = 0; v_learn <= m_mask; ++v_learn) {
+			if (v_learn & ~v_mask)
+				continue;
+
+			hxb_learn_v(hxb, v_mask, v_learn);
+
+			hx_brut_jump_next(hxb);
+
+			*hxb->hx = old_hx;
+			*hxb->hx_orig = old_hx_orig;
+			*hxb->hx_mask = old_hx_mask;
+		}
+	}
 }
 
 static void hx_brut(struct hxb_state *hxb)
