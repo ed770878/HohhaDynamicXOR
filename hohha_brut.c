@@ -311,6 +311,7 @@ static void hxb_check(struct hxb_state *hxb, char *where)
 {
 	struct hx_state *hx;
 	uint8_t *ciph;
+	size_t i;
 
 	if (!hxb_dbg_level)
 		return;
@@ -328,6 +329,11 @@ static void hxb_check(struct hxb_state *hxb, char *where)
 		hohha_dbg_level= ~0;
 		memcpy(hx, hxb->hx_orig, hxb->sz_hx);
 		hx_encrypt(hx, hxb->mesg, ciph, hxb->idx);
+		for (i = 0; i < hxb->idx; ++i)
+			if (ciph[i] != hxb->ciph[i])
+				break;
+		fprintf(stderr, "failed at idx %zu xor %#04hhx\n",
+			i, ciph[i] ^ hxb->ciph[i]);
 		exit(1);
 	}
 
