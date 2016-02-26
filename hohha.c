@@ -39,6 +39,7 @@ int main(int argc, char **argv)
 	char *arg_j = NULL;
 	char *arg_k = NULL;
 	char *arg_l = NULL;
+	char *arg_h = NULL;
 	char *arg_S = NULL;
 	char *arg_M = NULL;
 	char *arg_m = NULL;
@@ -52,6 +53,7 @@ int main(int argc, char **argv)
 	size_t raw_k_len = 0;
 
 	uint32_t num_l = NULL;
+	uint32_t num_h = 0;
 
 	uint8_t *raw_S = NULL;
 
@@ -62,7 +64,7 @@ int main(int argc, char **argv)
 	size_t out_m_len = 0;
 
 	opterr = 1;
-	while ((rc = getopt(argc, argv, "DdeK:j:k:l:S:M:m:v")) != -1) {
+	while ((rc = getopt(argc, argv, "DdeK:j:k:l:h:S:M:m:v")) != -1) {
 		switch (rc) {
 
 		case 'D': /* decrypt (plain) */
@@ -83,6 +85,9 @@ int main(int argc, char **argv)
 			break;
 		case 'l': /* override key length: numeric */
 			arg_l = optarg;
+			break;
+		case 'h': /* override key checksum: numeric */
+			arg_h = optarg;
 			break;
 
 		case 'S': /* override salt: eight numeric */
@@ -160,6 +165,8 @@ int main(int argc, char **argv)
 			"      Override key body (base64)\n"
 			"    -l <length>\n"
 			"      Override key length (numeric)\n"
+			"    -h <check>\n"
+			"      Override key checksum (numeric)\n"
 			"    -S <salt>\n"
 			"      Override key salt (eight numeric)\n"
 			"\n"
@@ -195,6 +202,9 @@ int main(int argc, char **argv)
 
 		if (arg_l)
 			fprintf(stderr, " -l '%s'", arg_l);
+
+		if (arg_l)
+			fprintf(stderr, " -h '%s'", arg_h);
 
 		if (arg_S)
 			fprintf(stderr, " -S '%s'", arg_S);
@@ -273,6 +283,19 @@ int main(int argc, char **argv)
 		num_l = get_key_len(raw_K);
 	}
 
+	if (arg_h) {
+		unsigned long val;
+
+		errno = 0;
+		val = strtoul(arg_h, NULL, 0);
+		if (errno || val > UINT32_MAX) {
+			fprintf(stderr, "invalid -l '%s'\n", arg_h);
+			exit(1);
+		}
+
+		num_h = (uint32_t)val;
+	}
+
 	if (arg_S) {
 		raw_S = malloc(8);
 
@@ -327,6 +350,9 @@ int main(int argc, char **argv)
 		*(uint32_t *)(raw_S),
 		*(uint32_t *)(raw_S + 4),
 		0);
+
+	if (arg_h)
+		hx->v = num_h;
 
 	if (op == 'e')
 		hx_encrypt(hx, raw_m, raw_m, raw_m_len);
