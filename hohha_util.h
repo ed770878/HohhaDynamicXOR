@@ -4,13 +4,12 @@
 #include <stdio.h>
 #include <stdint.h>
 
-extern int hohha_dbg_level;
+extern unsigned hohha_dbg_level;
 
-#define dbg(args...) \
-	do { if (hohha_dbg_level > 1) fprintf(stderr, args); } while (0)
-
-#define vdbg(args...) \
-	do { if (hohha_dbg_level > 2) fprintf(stderr, args); } while (0)
+#define pr(args...) fprintf(stderr, args)
+#define dbg(args...) do { if (hohha_dbg_level) pr(args); } while (0)
+#define vdbg(args...) do { if (hohha_dbg_level > 1) pr(args); } while (0)
+#define vvdbg(args...) do { if (hohha_dbg_level > 2) pr(args); } while (0)
 
 uint32_t crc32_byte(uint32_t crc, uint8_t word);
 uint32_t crc32_data(uint8_t *data, uint32_t len);

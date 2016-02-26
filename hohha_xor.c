@@ -20,10 +20,10 @@ void hx_init_key(struct hx_state *hx, uint8_t *key,
 	hx->v = crc32_data(hx->key, key_len);
 	hx->cs = ~0;
 
-	dbg("key_mask %#xu key_jumps %u\n",
-	    hx->key_mask, hx->key_jumps);
-	dbg("cs %#x v %#x\n",
-	    hx->cs, hx->v);
+	vdbg("key_mask %#xu key_jumps %u\n",
+	     hx->key_mask, hx->key_jumps);
+	vdbg("cs %#x v %#x\n",
+	     hx->cs, hx->v);
 }
 
 void hx_init_salt(struct hx_state *hx,
@@ -34,8 +34,8 @@ void hx_init_salt(struct hx_state *hx,
 	hx->m = (s1 >> 24) * (s2 >> 24);
 	hx->m &= hx->key_mask;
 
-	dbg("s1 %#x s2 %#x m %u\n",
-	    hx->s1, hx->s2, hx->m);
+	vdbg("s1 %#x s2 %#x m %u\n",
+	     hx->s1, hx->s2, hx->m);
 }
 
 void hx_init_opt(struct hx_state *hx, uint32_t opt)
@@ -55,7 +55,7 @@ void hx_init(struct hx_state *hx, uint8_t *key,
 
 void hx_vdbg(struct hx_state *hx, char *when)
 {
-	vdbg("%s s1 %#010x s2 %#010x m %u\n",
+	vvdbg("%s s1 %#010x s2 %#010x m %u\n",
 	     when, hx->s1, hx->s2, hx->m);
 }
 
@@ -221,7 +221,7 @@ uint8_t hx_step_xor(struct hx_state *hx)
 {
 	uint8_t x = u8(hx->v ^ hx->s1 ^ hx->s2);
 
-	vdbg("x %#x\n", x);
+	vvdbg("x %#x\n", x);
 
 	return x;
 }
@@ -231,7 +231,7 @@ void hx_step_crc(struct hx_state *hx, uint8_t word)
 	hx->cs = crc32_byte(hx->cs, word);
 	hx->v = rol32(hx->v ^ hx->cs, 1);
 
-	vdbg("cs %#x v %#x\n", hx->cs, hx->v);
+	vvdbg("cs %#x v %#x\n", hx->cs, hx->v);
 }
 
 uint32_t hx_text_crc(struct hx_state *hx)
@@ -241,9 +241,9 @@ uint32_t hx_text_crc(struct hx_state *hx)
 
 static uint8_t hx_xor(uint8_t word, uint8_t x)
 {
-	vdbg("in %#x\n", word);
+	vvdbg("in %#x\n", word);
 	word ^= x;
-	vdbg("out %#x\n", word);
+	vvdbg("out %#x\n", word);
 
 	return word;
 
@@ -257,7 +257,7 @@ void hx_encrypt(struct hx_state *hx,
 	int i;
 	uint8_t x;
 
-	dbg("len %u\n", len);
+	vvdbg("len %u\n", len);
 
 	for (i = 0; i < len; ++i) {
 		hx_jump(hx);
@@ -279,7 +279,7 @@ void hx_decrypt(struct hx_state *hx,
 	int i;
 	uint8_t x;
 
-	dbg("len %u\n", len);
+	vvdbg("len %u\n", len);
 
 	for (i = 0; i < len; ++i) {
 		hx_jump(hx);

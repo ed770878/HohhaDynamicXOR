@@ -1,6 +1,6 @@
 #include "hohha_util.h"
 
-int hohha_dbg_level;
+unsigned hohha_dbg_level;
 
 /* ---- crc32: table data from HohhaDynamicXor.c ---- */
 
