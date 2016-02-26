@@ -319,13 +319,15 @@ static void hxb_check(struct hxb_state *hxb, char *where)
 	ciph = malloc(hxb->idx);
 
 	memcpy(hx, hxb->hx_orig, hxb->sz_hx);
-
 	hx_encrypt(hx, hxb->mesg, ciph, hxb->idx);
 
 	if (memcmp(ciph, hxb->ciph, hxb->idx)) {
 		hx_done(stderr, where, hxb);
 		fprintf(stderr, "current jump %zu at %zu of %zu\n",
 			hxb->jmp, hxb->idx, hxb->len);
+		hohha_dbg_level= ~0;
+		memcpy(hx, hxb->hx_orig, hxb->sz_hx);
+		hx_encrypt(hx, hxb->mesg, ciph, hxb->idx);
 		exit(1);
 	}
 
