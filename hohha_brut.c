@@ -389,6 +389,7 @@ static void hx_brut_jump_next(struct hxb_state *hxb)
 	struct hx_state old_hx = *hxb->hx;
 	size_t j = hxb->jmp++;
 	size_t m = hxb->hx->m;
+	uint32_t k = hxb->hx->key[m];
 
 	hxb_check(hxb, "#jump#A#");
 
@@ -420,7 +421,6 @@ static void hx_brut_jump_next(struct hxb_state *hxb)
 			*hxb->hx = old_hx;
 		}
 
-		hxb_guess_key(hxb, m, 0);
 		hxb_mask_key(hxb, m, 0);
 
 		hxb_check(hxb, "#jump#C#");
@@ -431,6 +431,7 @@ static void hx_brut_jump_next(struct hxb_state *hxb)
 		    j, hxb->idx, hxb->len);
 
 	hxb->jmp = j;
+	hxb->hx->key[m] = k;
 }
 
 static void hx_brut_jump(struct hxb_state *hxb)
