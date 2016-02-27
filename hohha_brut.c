@@ -4,7 +4,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
 
 #include "hohha_xor.h"
 #include "hohha_util.h"
@@ -60,7 +59,7 @@ static uint32_t hxb_mask_v(struct hxb_state *hxb)
 static void hxb_learn_v(struct hxb_state *hxb, uint32_t mask, uint32_t xor)
 {
 	hxb->hx->v ^= xor;
-	hxb->hx_orig->v |= ror32(xor, hxb->idx & 31);
+	hxb->hx_orig->v ^= ror32(xor, hxb->idx & 31);
 	hxb->hx_mask->v |= ror32(mask, hxb->idx & 31);
 }
 
@@ -113,6 +112,7 @@ int main(int argc, char **argv)
 	char *arg_m = NULL;
 	char *arg_x = NULL;
 
+	int opt_r = 0;
 	uint32_t num_j = 0;
 	uint32_t num_l = NULL;
 	uint8_t *raw_S = NULL;
@@ -122,7 +122,7 @@ int main(int argc, char **argv)
 	size_t raw_x_len = 0;
 
 	opterr = 1;
-	while ((rc = getopt(argc, argv, "j:l:S:m:x:vz")) != -1) {
+	while ((rc = getopt(argc, argv, "j:l:S:m:x:rvz")) != -1) {
 		switch (rc) {
 
 		case 'j': /* key jumps: numeric */
@@ -139,6 +139,10 @@ int main(int argc, char **argv)
 			break;
 		case 'x': /* plaintext: base64 */
 			arg_x = optarg;
+			break;
+
+		case 'r': /* randomize key */
+			opt_r = 1;
 			break;
 
 		case 'v': /* increase verbosity */
@@ -274,11 +278,16 @@ int main(int argc, char **argv)
 	hxb.idx = 0;
 	hxb.jmp = 0;
 
+	if (opt_r)
+		getrandom(hxb.hx, hxb.sz_hx, 0);
+
 	hx_init(hxb.hx, NULL, num_l, num_j,
 		*(uint32_t *)(raw_S),
 		*(uint32_t *)(raw_S + 4),
 		0);
-	hxb.hx->v = 0;
+
+	if (!opt_r)
+		hxb.hx->v = 0;
 
 	*hxb.hx_orig = *hxb.hx;
 
@@ -413,7 +422,7 @@ static void hx_brut_jump_next(struct hxb_state *hxb)
 				dbg("jump %u at %zu of %zu new key[%zu]=%#04x\n",
 				     j, hxb->idx, hxb->len, m, x);
 
-			hxb_guess_key(hxb, m, x);
+			hxb_guess_key(hxb, m, k + x);
 			hxb_jump(hxb, j);
 
 			hx_brut(hxb);
