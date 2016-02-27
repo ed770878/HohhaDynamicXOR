@@ -6,7 +6,7 @@
 
 extern unsigned hohha_dbg_level;
 
-#define pr(args...) fprintf(stderr, args)
+#define pr(args...) fprintf(stderr, ##args)
 #define dbg(args...) do { if (hohha_dbg_level) pr(args); } while (0)
 #define vdbg(args...) do { if (hohha_dbg_level > 1) pr(args); } while (0)
 #define vvdbg(args...) do { if (hohha_dbg_level > 2) pr(args); } while (0)
