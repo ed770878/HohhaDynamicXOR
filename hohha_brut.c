@@ -387,15 +387,15 @@ static void hx_brut_step(struct hxb_state *hxb)
 static void hx_brut_jump_next(struct hxb_state *hxb)
 {
 	struct hx_state old_hx = *hxb->hx;
-	size_t j = hxb->jmp++;
 	size_t m = hxb->hx->m;
+	uint32_t j = hxb->jmp++;
 	uint32_t k = hxb->hx->key[m];
 
 	hxb_check(hxb, "#jump#A#");
 
 	if (hxb_have_key(hxb, m)) {
 		if (hxb_interesting(hxb))
-			dbg("jump %zu at %zu of %zu existing key[%zu]\n",
+			dbg("jump %u at %zu of %zu existing key[%zu]\n",
 			    j, hxb->idx, hxb->len, m);
 
 		hxb_jump(hxb, j);
@@ -410,7 +410,7 @@ static void hx_brut_jump_next(struct hxb_state *hxb)
 
 		for (uint32_t x = hxb->hx->key[m]; x <= 0xff; ++x) {
 			if (hxb_interesting(hxb))
-				dbg("jump %zu at %zu of %zu new key[%zu]=%#04x\n",
+				dbg("jump %u at %zu of %zu new key[%zu]=%#04x\n",
 				     j, hxb->idx, hxb->len, m, x);
 
 			hxb_guess_key(hxb, m, x);
@@ -427,7 +427,7 @@ static void hx_brut_jump_next(struct hxb_state *hxb)
 	}
 
 	if (hxb_interesting(hxb))
-		dbg("backtrack jump %zu at %zu of %zu\n",
+		dbg("backtrack jump %u at %zu of %zu\n",
 		    j, hxb->idx, hxb->len);
 
 	hxb->jmp = j;
