@@ -465,7 +465,23 @@ static void hx_brut_jump(struct hxb_state *hxb)
 
 			hxb_learn_v(hxb, v_mask, v_learn);
 
-			hx_brut_jump_next(hxb);
+			/* try the most constrained: key[m] chosen */
+			if (hxb_have_key(hxb, (hxb->hx->m ^ hxb->hx->v) & m_mask))
+				hx_brut_jump_next(hxb);
+
+			*hxb->hx = old_hx;
+			*hxb->hx_orig = old_hx_orig;
+			*hxb->hx_mask = old_hx_mask;
+		}
+		for(v_learn = 0; v_learn <= m_mask; ++v_learn) {
+			if (v_learn & ~v_mask)
+				continue;
+
+			hxb_learn_v(hxb, v_mask, v_learn);
+
+			/* try the rest: key[m] not chosen */
+			if (!hxb_have_key(hxb, (hxb->hx->m ^ hxb->hx->v) & m_mask))
+				hx_brut_jump_next(hxb);
 
 			*hxb->hx = old_hx;
 			*hxb->hx_orig = old_hx_orig;
