@@ -1,4 +1,5 @@
 #include <errno.h>
+#include <limits.h>
 #include <signal.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -9,6 +10,8 @@
 #include "hohha_util.h"
 
 static int hxb_dbg_level;
+static size_t hxb_ebt_idx = SIZE_MAX;
+static size_t hxb_ebt_jmp = SIZE_MAX;
 
 volatile sig_atomic_t seen_sigusr1;
 volatile sig_atomic_t done_sigusr1;
@@ -478,6 +481,10 @@ static void hx_brut(struct hxb_state *hxb)
 		hx_done(stderr, "progress", hxb);
 		fprintf(stderr, "current jump %zu at %zu of %zu\n",
 			hxb->jmp, hxb->idx, hxb->len);
+		fprintf(stderr, "backtrack jump %zu at %zu of %zu\n",
+			hxb_ebt_jmp, hxb_ebt_idx, hxb->len);
+		hxb_ebt_idx = SIZE_MAX;
+		hxb_ebt_jmp = SIZE_MAX;
 	}
 
 	if (hxb->idx < hxb->len) {
@@ -487,5 +494,13 @@ static void hx_brut(struct hxb_state *hxb)
 			hx_brut_step(hxb);
 	} else {
 		hx_done(stdout, "done----", hxb);
+	}
+
+	if (hxb->idx < hxb_ebt_idx) {
+		hxb_ebt_idx = hxb->idx;
+		hxb_ebt_jmp = hxb->jmp;
+	} else if (hxb->idx == hxb_ebt_idx) {
+		if (hxb->jmp < hxb_ebt_jmp)
+			hxb_ebt_jmp = hxb->jmp;
 	}
 }
