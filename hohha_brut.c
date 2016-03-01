@@ -103,6 +103,8 @@ static int hxb_ctx_check(struct hxb_ctx *ctx)
 		memcpy(hx, ctx->hx_orig, ctx->sz_hx);
 		hx->s1 = pos->hx->s1;
 		hx->s2 = pos->hx->s2;
+		hx->m = (pos->hx->s1 >> 24) * (pos->hx->s2 >> 24);
+		hx->m &= pos->hx->key_mask;
 
 		rc = hxb_hx_check(hx, pos->mesg, pos->ciph, pos->idx);
 		if (rc)
