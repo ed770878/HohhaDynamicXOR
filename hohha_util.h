@@ -40,6 +40,30 @@ static inline uint32_t shl32(uint32_t word, unsigned shift)
 	return word << shift;
 }
 
+static inline uint32_t bit32(unsigned shift)
+{
+	return 1u << shift;
+}
+
+static inline uint32_t incr32_mask(uint32_t word, uint32_t mask)
+{
+	unsigned shift, bit;
+
+	for (shift = 0; shift < 32; ++shift) {
+		bit = bit32(shift);
+		if (bit & mask) {
+			if (bit & word) {
+				word &= ~bit;
+			} else {
+				word |= bit;
+				break;
+			}
+		}
+	}
+
+	return word;
+}
+
 static inline uint8_t u8(uintmax_t word)
 {
 	return (uint8_t)word;
