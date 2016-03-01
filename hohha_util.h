@@ -47,21 +47,19 @@ static inline uint32_t bit32(unsigned shift)
 
 static inline uint32_t incr32_mask(uint32_t word, uint32_t mask)
 {
-	unsigned shift, bit;
+	unsigned shift, bit = 0;
 
 	for (shift = 0; shift < 32; ++shift) {
 		bit = bit32(shift);
 		if (bit & mask) {
-			if (bit & word) {
+			if (bit & word)
 				word &= ~bit;
-			} else {
-				word |= bit;
-				break;
-			}
+			else
+				return word | bit;
 		}
 	}
 
-	return word;
+	return ~0;
 }
 
 static inline int is_pow2(uintmax_t word)
