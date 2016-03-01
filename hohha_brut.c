@@ -556,20 +556,17 @@ int main(int argc, char **argv)
 	}
 
 	if (arg_k) {
-		size_t sz;
-
-		rc = b64_decode(arg_k, strlen(arg_k), NULL, &sz);
+		rc = b64_decode(arg_k, strlen(arg_k), NULL, &raw_k_len);
 		if (rc) {
 			fprintf(stderr, "invalid -k '%s'\n", arg_k);
 			exit(1);
 		}
-		if (sz != num_l) {
+		if (raw_k_len != num_l) {
 			fprintf(stderr, "invalid length -k '%s'\n", arg_k);
 			exit(1);
 		}
 
-		raw_k = malloc(sz);
-		raw_k_len = sz;
+		raw_k = malloc(raw_k_len);
 
 		b64_decode(arg_k, strlen(arg_k), raw_k, &raw_k_len);
 	}
