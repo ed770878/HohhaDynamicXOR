@@ -141,7 +141,7 @@ struct hxb_ctx *hxb_ctx_dup(struct hxb_ctx *ctx)
 	dup = malloc(sizeof(*dup));
 	dup->pos = malloc(sizeof(*dup->pos) * ctx->pos_count);
 	dup->hx_orig = hxb_hx_dup(ctx->hx_orig, ctx->sz_hx);
-	dup->hx_mask = hxb_hx_dup(ctx->hx_orig, ctx->sz_hx);
+	dup->hx_mask = hxb_hx_dup(ctx->hx_mask, ctx->sz_hx);
 	dup->pos_count = ctx->pos_count;
 	dup->sz_key = ctx->sz_key;
 	dup->sz_hx = ctx->sz_hx;
