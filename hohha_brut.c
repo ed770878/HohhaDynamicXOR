@@ -432,7 +432,7 @@ static void hxb_ctx_brut(struct hxb_ctx *ctx)
 
 /* --- --- --- --- --- --- --- --- --- */
 
-static void hxb_ctx_read(struct hxb_ctx *ctx)
+static void hxb_ctx_read(struct hxb_ctx *ctx, FILE *f)
 {
 	struct hxb_pos *pos;
 	size_t pos_i;
@@ -447,10 +447,10 @@ static void hxb_ctx_read(struct hxb_ctx *ctx)
 		arg_m = NULL;
 		arg_x = NULL;
 
-		rc = scanf("%hhu %hhu %hhu %hhu %hhu %hhu %hhu %hhu %ms %ms",
-			   &raw_S[0], &raw_S[1], &raw_S[2], &raw_S[3],
-			   &raw_S[4], &raw_S[5], &raw_S[6], &raw_S[7],
-			   &arg_m, &arg_x);
+		rc = fscanf(f, "%hhu %hhu %hhu %hhu %hhu %hhu %hhu %hhu %ms %ms",
+			    &raw_S[0], &raw_S[1], &raw_S[2], &raw_S[3],
+			    &raw_S[4], &raw_S[5], &raw_S[6], &raw_S[7],
+			    &arg_m, &arg_x);
 
 		if (rc != 10)
 			goto err;
@@ -508,6 +508,7 @@ int main(int argc, char **argv)
 
 	int rc, errflg = 0;
 
+	char *arg_f = NULL;
 	char *arg_j = NULL;
 	char *arg_l = NULL;
 	char *arg_h = NULL;
@@ -521,8 +522,12 @@ int main(int argc, char **argv)
 	size_t raw_k_len = 0;
 
 	opterr = 1;
-	while ((rc = getopt(argc, argv, "j:l:h:k:rvz")) != -1) {
+	while ((rc = getopt(argc, argv, "f:j:l:h:k:rvz")) != -1) {
 		switch (rc) {
+
+		case 'f': /* file name: string */
+			arg_f = optarg;
+			break;
 
 		case 'j': /* key jumps: numeric */
 			arg_j = optarg;
@@ -580,6 +585,8 @@ int main(int argc, char **argv)
 			"      Initialize key body (base64)\n"
 			"    -r\n"
 			"      Randomize key body and checksum\n"
+			"    -f <file>\n"
+			"      Read known plaintext from file\n"
 			"\n"
 			"  -v\n"
 			"      Increase debug verbosity (may be repeated)\n"
@@ -674,7 +681,17 @@ int main(int argc, char **argv)
 	if (arg_h)
 		ctx.hx_orig->v = num_h;
 
-	hxb_ctx_read(&ctx);
+	if (arg_f) {
+		FILE *f = fopen(arg_f, "r");
+		if (!f) {
+			fprintf(stderr, "invalid -f '%s'\n", arg_f);
+			exit(1);
+		}
+		hxb_ctx_read(&ctx, f);
+		fclose(f);
+	} else {
+		hxb_ctx_read(&ctx, stdin);
+	}
 
 	signal(SIGUSR1, catch_sigusr1);
 
@@ -682,4 +699,3 @@ int main(int argc, char **argv)
 
 	return 0;
 }
-
