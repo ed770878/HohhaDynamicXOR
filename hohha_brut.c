@@ -21,6 +21,8 @@ static void catch_sigusr1(int sig)
 /* --- --- --- --- --- --- --- --- --- */
 
 struct hxb_pos {
+	uint32_t s1;			/* original s1 */
+	uint32_t s2;			/* original s2 */
 	struct hx_state *hx;		/* running state */
 	uint8_t *mesg;			/* cleartext message */
 	uint8_t *ciph;			/* ciphertext message */
@@ -101,9 +103,9 @@ static int hxb_ctx_check(struct hxb_ctx *ctx)
 		pos = ctx->pos[i];
 
 		memcpy(hx, ctx->hx_orig, ctx->sz_hx);
-		hx->s1 = pos->hx->s1;
-		hx->s2 = pos->hx->s2;
-		hx->m = (pos->hx->s1 >> 24) * (pos->hx->s2 >> 24);
+		hx->s1 = pos->s1;
+		hx->s2 = pos->s2;
+		hx->m = (pos->s1 >> 24) * (pos->s2 >> 24);
 		hx->m &= pos->hx->key_mask;
 
 		rc = hxb_hx_check(hx, pos->mesg, pos->ciph, pos->idx);
@@ -133,6 +135,8 @@ struct hxb_pos *hxb_pos_dup(struct hxb_pos *pos, size_t sz_hx)
 	struct hxb_pos *dup;
 
 	dup = malloc(sizeof(*dup));
+	dup->s1 = pos->s1;
+	dup->s2 = pos->s2;
 	dup->hx = hxb_hx_dup(pos->hx, sz_hx);
 	dup->mesg = pos->mesg;
 	dup->ciph = pos->ciph;
@@ -474,10 +478,12 @@ static void hxb_ctx_read(struct hxb_ctx *ctx, FILE *f)
 		}
 
 		pos = malloc(sizeof(*pos));
+		pos->s1 = leu32(raw_S + 0);
+		pos->s2 = leu32(raw_S + 4);
 		pos->hx = hxb_hx_dup(ctx->hx_orig, ctx->sz_hx);
-		pos->hx->s1 = leu32(raw_S + 0);
-		pos->hx->s2 = leu32(raw_S + 4);
-		pos->hx->m = (pos->hx->s1 >> 24) * (pos->hx->s2 >> 24);
+		pos->hx->s1 = pos->s1;
+		pos->hx->s2 = pos->s2;
+		pos->hx->m = (pos->s1 >> 24) * (pos->s2 >> 24);
 		pos->hx->m &= pos->hx->key_mask;
 		pos->mesg = malloc(raw_m_len);
 		pos->ciph = malloc(raw_x_len);
