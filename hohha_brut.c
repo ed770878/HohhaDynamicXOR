@@ -20,12 +20,10 @@ static void catch_sigusr1(int sig)
 	++seen_sigusr1;
 }
 
-struct hxb_state {
-	size_t sz_key;			/* size of key */
-	size_t sz_hx;			/* size of state */
+/* --- --- --- --- --- --- --- --- --- */
+
+struct hxb_pos {
 	struct hx_state *hx;		/* running state */
-	struct hx_state *hx_orig;	/* guessed original state */
-	struct hx_state *hx_mask;	/* mask of guessed bits */
 	uint8_t *mesg;			/* cleartext message */
 	uint8_t *ciph;			/* ciphertext message */
 	size_t len;			/* length of message */
@@ -33,99 +31,303 @@ struct hxb_state {
 	size_t jmp;			/* current jump */
 };
 
-static void hxb_guess_key(struct hxb_state *hxb, uint32_t m, uint8_t x)
-{
-	hxb->hx->key[m] = x;
-	hxb->hx_orig->key[m] = x;
-}
+struct hxb_ctx {
+	size_t sz_key;			/* size of key */
+	size_t sz_hx;			/* size of state */
+	size_t pos_count;		/* number of positions */
+	struct hxb_pos **pos;		/* cipher positions */
+	struct hx_state *hx_orig;	/* guessed original state */
+	struct hx_state *hx_mask;	/* mask of guessed bits */
+};
 
-static void hxb_mask_key(struct hxb_state *hxb, uint32_t m, uint8_t x)
-{
-	hxb->hx_mask->key[m] = x;
-}
+/* --- --- --- --- --- --- --- --- --- */
 
-static int hxb_have_key(struct hxb_state *hxb, uint32_t m)
+static int hxb_hx_check(struct hx_state *hx, uint8_t *mesg, uint8_t *ciph, size_t len)
 {
-	return hxb->hx_mask->key[m];
-}
+	size_t i;
+	uint8_t mesg_x;
+	uint8_t ciph_x;
 
-static uint8_t hxb_step_xor(struct hxb_state *hxb)
-{
-	return hxb->mesg[hxb->idx] ^ hxb->ciph[hxb->idx];
-}
+	for (i = 0; i < len; ++i) {
+		hx->jump_fn(hx);
 
-static uint32_t hxb_mask_v(struct hxb_state *hxb)
-{
-	return rol32(hxb->hx_mask->v, hxb->idx & 31);
-}
+		mesg_x = mesg[i];
+		ciph_x = ciph[i];
 
-static void hxb_learn_v(struct hxb_state *hxb, uint32_t mask, uint32_t xor)
-{
-	hxb->hx->v ^= xor;
-	hxb->hx_orig->v ^= ror32(xor, hxb->idx & 31);
-	hxb->hx_mask->v |= ror32(mask, hxb->idx & 31);
-}
+		hx_step_crc(hx, mesg_x);
 
-static void hxb_step_crc(struct hxb_state *hxb)
-{
-	hx_step_crc(hxb->hx, hxb->mesg[hxb->idx]);
-}
-
-static void hxb_jump(struct hxb_state *hxb, uint32_t jmp)
-{
-	uint32_t j0 = !!(jmp & 1);
-	uint32_t j1 = !!(jmp & ~1);
-
-	switch (j0 | (j1 << 1)) {
-	case 0: hx_jump0(hxb->hx); break;
-	case 1: hx_jump1(hxb->hx); break;
-	case 2: hx_jump2(hxb->hx); break;
-	case 3: hx_jump3(hxb->hx);
+		if (hx_step_xor(hx) != (mesg_x ^ ciph_x))
+			return -1;
 	}
+
+	return 0;
 }
 
-static int hxb_interesting(struct hxb_state *hxb)
+static int hxb_ctx_check(struct hxb_ctx *ctx)
 {
-	return hxb->idx < 10 || hxb->len - hxb->idx < 10;
+	struct hx_state *hx;
+	struct hxb_pos *pos;
+	size_t i;
+	int rc = 0;
+
+	hx = malloc(ctx->sz_hx);
+
+	for (i = 0; i < ctx->pos_count; ++i) {
+		pos = ctx->pos[i];
+
+		memcpy(hx, ctx->hx_orig, ctx->sz_hx);
+		hx->s1 = pos->hx->s1;
+		hx->s2 = pos->hx->s2;
+
+		rc = hxb_hx_check(hx, pos->mesg, pos->ciph, pos->idx);
+		if (rc)
+			break;
+	}
+
+	free(hx);
+
+	return rc;
 }
 
-static void hx_done(FILE *f, char *note, struct hxb_state *hxb);
-static void hx_brut(struct hxb_state *hxb);
+/* --- --- --- --- --- --- --- --- --- */
 
-static void *hx_zalloc(size_t size)
+struct hx_state *hxb_hx_dup(struct hx_state *hx, size_t sz_hx)
 {
-	void *x;
+	struct hx_state *dup;
 
-	x = malloc(size);
-	if (x)
-		memset(x, 0, size);
+	dup = malloc(sz_hx);
+	memcpy(dup, hx, sz_hx);
 
-	return x;
+	return dup;
 }
+
+struct hxb_pos *hxb_pos_dup(struct hxb_pos *pos, size_t sz_hx)
+{
+	struct hxb_pos *dup;
+
+	dup = malloc(sizeof(*dup));
+	dup->hx = hxb_hx_dup(pos->hx, sz_hx);
+	dup->mesg = pos->mesg;
+	dup->ciph = pos->ciph;
+	dup->len = pos->len;
+	dup->idx = pos->idx;
+	dup->jmp = pos->jmp;
+
+	return dup;
+}
+
+struct hxb_ctx *hxb_ctx_dup(struct hxb_ctx *ctx)
+{
+	struct hxb_ctx *dup;
+	size_t i;
+
+	dup = malloc(sizeof(*dup));
+	dup->pos = malloc(sizeof(*dup->pos) * ctx->pos_count);
+	dup->hx_orig = hxb_hx_dup(ctx->hx_orig, ctx->sz_hx);
+	dup->hx_mask = hxb_hx_dup(ctx->hx_orig, ctx->sz_hx);
+	dup->pos_count = ctx->pos_count;
+	dup->sz_key = ctx->sz_key;
+	dup->sz_hx = ctx->sz_hx;
+
+	for (i = 0; i < ctx->pos_count; ++i)
+		dup->pos[i] = hxb_pos_dup(ctx->pos[i], ctx->sz_hx);
+
+	return dup;
+}
+
+/* --- --- --- --- --- --- --- --- --- */
+
+void hxb_hx_free(struct hx_state *hx)
+{
+	free(hx);
+}
+
+void hxb_pos_free(struct hxb_pos *pos)
+{
+	hxb_hx_free(pos->hx);
+	free(pos);
+}
+
+void hxb_ctx_free(struct hxb_ctx *ctx)
+{
+	size_t i;
+
+	for (i = 0; i < ctx->pos_count; ++i)
+		hxb_pos_free(ctx->pos[i]);
+
+	hxb_hx_free(ctx->hx_orig);
+	hxb_hx_free(ctx->hx_mask);
+	free(ctx->pos);
+	free(ctx);
+}
+
+/* --- --- --- --- --- --- --- --- --- */
+
+static void hxb_hx_guess_key(struct hx_state *hx, uint32_t m, uint8_t x)
+{
+	hx->key[m] = x;
+}
+
+static void hxb_pos_guess_key(struct hxb_pos *pos, uint32_t m, uint8_t x)
+{
+	hxb_hx_guess_key(pos->hx, m, x);
+}
+
+static void hxb_ctx_guess_key(struct hxb_ctx *ctx, uint32_t m, uint32_t x)
+{
+	size_t i;
+
+	hxb_hx_guess_key(ctx->hx_orig, m, x);
+
+	for (i = 0; i < ctx->pos_count; ++i)
+		hxb_pos_guess_key(ctx->pos[i], m, x);
+}
+
+static void hxb_ctx_mask_key(struct hxb_ctx *ctx, uint32_t m)
+{
+	hxb_hx_guess_key(ctx->hx_mask, m, ~0);
+}
+
+/* --- --- --- --- --- --- --- --- --- */
+
+static void hxb_hx_guess_v(struct hx_state *hx, uint32_t v)
+{
+	hx->v ^= v;
+}
+
+static void hxb_pos_guess_v(struct hxb_pos *pos, uint32_t v)
+{
+	hxb_hx_guess_v(pos->hx, rol32(v, pos->idx & 31));
+}
+
+static void hxb_ctx_guess_v(struct hxb_ctx *ctx, uint32_t v)
+{
+	size_t i;
+
+	hxb_hx_guess_v(ctx->hx_orig, v);
+
+	for (i = 0; i < ctx->pos_count; ++i)
+		hxb_pos_guess_v(ctx->pos[i], v);
+}
+
+static void hxb_ctx_mask_v(struct hxb_ctx *ctx, uint32_t v)
+{
+	ctx->hx_mask->v |= v;
+}
+
+/* --- --- --- --- --- --- --- --- --- */
+
+static int hxb_pos_done(struct hxb_pos *pos)
+{
+	return pos->idx == pos->len;
+}
+
+static int hxb_pos_have_m(struct hxb_pos *pos, struct hx_state *mask)
+{
+	return !!mask->key[pos->hx->m];
+}
+
+static uint32_t hxb_pos_need_m(struct hxb_pos *pos)
+{
+	return pos->hx->m;
+}
+
+static uint32_t hxb_pos_need_v(struct hxb_pos *pos, struct hx_state *mask)
+{
+	return mask->v & ror32(pos->hx->key_mask | 0xff, pos->idx & 31);
+}
+
+/* --- --- --- --- --- --- --- --- --- */
+
+static void hxb_pos_jump(struct hxb_pos *pos)
+{
+	size_t i = pos->idx;
+
+	hx_jump_n(pos->hx, i);
+}
+
+static int hxb_pos_step(struct hxb_pos *pos)
+{
+	size_t i = pos->idx;
+	uint8_t mesg_x = pos->mesg[i];
+	uint8_t ciph_x = pos->ciph[i];
+
+	hx_step_crc(pos->hx, mesg_x);
+
+	if (hx_step_xor(pos->hx) != (mesg_x ^ ciph_x))
+		return -1;
+	return 0;
+}
+
+static int hxb_pos_adv(struct hxb_pos *pos, struct hx_state *mask)
+{
+	int rc;
+
+	while (!hxb_pos_done(pos)) {
+		if (hxb_pos_need_v(pos, mask))
+			return 0;
+
+		while (pos->jmp < pos->hx->key_jumps) {
+			if (!hxb_pos_have_m(pos, mask))
+				return 0;
+
+			hxb_pos_jump(pos);
+
+			++pos->jmp;
+		}
+
+		rc = hxb_pos_step(pos);
+		if (rc)
+			return rc;
+
+		pos->jmp = 0;
+		++pos->idx;
+	}
+
+	return 0;
+}
+
+static int hxb_ctx_adv(struct hxb_ctx *ctx)
+{
+	size_t i;
+	int rc;
+
+	for (i = 0; i < ctx->pos_count; ++i) {
+		rc = hxb_pos_adv(ctx->pos[i], ctx->hx_mask);
+		if (rc)
+			return rc;
+	}
+
+	return 0;
+}
+
+/* --- --- --- --- --- --- --- --- --- */
+
+/* -------- -------- -------- -------- */
+/* -------- -------- -------- -------- */
+/* -------- -------- -------- -------- */
+/* -------- -------- -------- -------- */
 
 int main(int argc, char **argv)
 {
-	struct hxb_state hxb;
+	struct hxb_ctx ctx;
 
 	int rc, errflg = 0;
 
 	char *arg_j = NULL;
 	char *arg_l = NULL;
-	char *arg_S = NULL;
-	char *arg_m = NULL;
-	char *arg_x = NULL;
+	char *arg_h = NULL;
+	char *arg_k = NULL;
 
 	int opt_r = 0;
 	uint32_t num_j = 0;
 	uint32_t num_l = NULL;
-	uint8_t *raw_S = NULL;
-	uint8_t *raw_m = NULL;
-	size_t raw_m_len = 0;
-	uint8_t *raw_x = NULL;
-	size_t raw_x_len = 0;
+	uint32_t num_h = NULL;
+	uint8_t *raw_k = NULL;
+	size_t raw_k_len = 0;
 
 	opterr = 1;
-	while ((rc = getopt(argc, argv, "j:l:S:m:x:rvz")) != -1) {
+	while ((rc = getopt(argc, argv, "j:l:h:k:rvz")) != -1) {
 		switch (rc) {
 
 		case 'j': /* key jumps: numeric */
@@ -134,16 +336,14 @@ int main(int argc, char **argv)
 		case 'l': /* key length: numeric */
 			arg_l = optarg;
 			break;
-		case 'S': /* salt: eight numeric */
-			arg_S = optarg;
-			break;
-		case 'm': /* plaintext: base64 */
-			arg_m = optarg;
-			break;
-		case 'x': /* plaintext: base64 */
-			arg_x = optarg;
+
+		case 'h': /* initialize v: numeric */
+			arg_h = optarg;
 			break;
 
+		case 'k': /* initialize key: base64 */
+			arg_k = optarg;
+			break;
 		case 'r': /* randomize key */
 			opt_r = 1;
 			break;
@@ -161,7 +361,7 @@ int main(int argc, char **argv)
 		}
 	}
 
-	if (!arg_j || !arg_l || !arg_S || !arg_m || !arg_x) {
+	if (!arg_j || !arg_l) {
 		fprintf(stderr, "missing one of the required options\n");
 		++errflg;
 	}
@@ -175,17 +375,17 @@ int main(int argc, char **argv)
 		fprintf(stderr,
 			"usage: %s <options> [-v]\n"
 			"\n"
-			"  Following options must be specified:\n"
+			"  Options:\n"
 			"    -j <jumps>\n"
-			"      Key jumps (numeric)\n"
+			"      Key jumps (numeric) (required)\n"
 			"    -l <length>\n"
-			"      Key length (numeric)\n"
-			"    -S <salt>\n"
-			"      Key salt (eight numeric)\n"
-			"    -m <msg>\n"
-			"      Plaintext message (base64)\n"
-			"    -x <msg>\n"
-			"      Ciphertext message (base64)\n"
+			"      Key length (numeric) (required)\n"
+			"    -h <check>\n"
+			"      Initialize key checksum (numeric)\n"
+			"    -k <body>\n"
+			"      Initialize key body (base64)\n"
+			"    -r\n"
+			"      Randomize key body and checksum\n"
 			"\n"
 			"  -v\n"
 			"      Increase debug verbosity (may be repeated)\n"
@@ -222,301 +422,66 @@ int main(int argc, char **argv)
 		num_l = (uint32_t)val;
 	}
 
-	{ /* arg_s */
-		raw_S = malloc(8);
+	if (arg_h) {
+		unsigned long val;
 
-		rc = sscanf(arg_S, "%hhu %hhu %hhu %hhu %hhu %hhu %hhu %hhu\n",
-		       &raw_S[0], &raw_S[1], &raw_S[2], &raw_S[3],
-		       &raw_S[4], &raw_S[5], &raw_S[6], &raw_S[7]);
-		if (rc != 8) {
-			fprintf(stderr, "invalid -S '%s'\n", arg_S);
+		errno = 0;
+		val = strtoul(arg_h, NULL, 0);
+		if (errno || val > UINT32_MAX) {
+			fprintf(stderr, "invalid -h '%s'\n", arg_h);
 			exit(1);
 		}
+
+		num_h = (uint32_t)val;
 	}
 
-	{ /* arg_m */
+	if (arg_k) {
 		size_t sz;
 
-		rc = b64_decode(arg_m, strlen(arg_m), NULL, &sz);
+		rc = b64_decode(arg_k, strlen(arg_k), NULL, &sz);
 		if (rc) {
-			fprintf(stderr, "invalid -m '%s'\n", arg_m);
+			fprintf(stderr, "invalid -k '%s'\n", arg_k);
+			exit(1);
+		}
+		if (sz != num_l) {
+			fprintf(stderr, "invalid length -k '%s'\n", arg_k);
 			exit(1);
 		}
 
-		raw_m = malloc(sz);
-		raw_m_len = sz;
+		raw_k = malloc(sz);
+		raw_k_len = sz;
 
-		b64_decode(arg_m, strlen(arg_m), raw_m, &raw_m_len);
+		b64_decode(arg_k, strlen(arg_k), raw_k, &raw_k_len);
 	}
 
-	{ /* arg_x */
-		size_t sz;
+	ctx.sz_key = num_l;
+	ctx.sz_hx = sizeof(*ctx.hx_orig) + ctx.sz_key;
+	ctx.pos_count = 0;
+	ctx.pos = NULL;
+	ctx.hx_orig = malloc(ctx.sz_hx);
+	ctx.hx_mask = malloc(ctx.sz_hx);
 
-		rc = b64_decode(arg_x, strlen(arg_x), NULL, &sz);
-		if (rc) {
-			fprintf(stderr, "invalid -m '%s'\n", arg_x);
-			exit(1);
-		}
-
-		raw_x = malloc(sz);
-		raw_x_len = sz;
-
-		b64_decode(arg_x, strlen(arg_x), raw_x, &raw_x_len);
-	}
-
-	if (raw_m_len != raw_x_len) {
-		fprintf(stderr, "messages have different lengths (%zu, %zu)\n",
-			raw_m_len, raw_x_len);
-		exit(1);
-	}
-
-	hxb.sz_key = num_l;
-	hxb.sz_hx = sizeof(*hxb.hx) + hxb.sz_key;
-	hxb.hx = hx_zalloc(hxb.sz_hx);
-	hxb.hx_orig = hx_zalloc(hxb.sz_hx);
-	hxb.hx_mask = hx_zalloc(hxb.sz_hx);
-	hxb.mesg = raw_m;
-	hxb.ciph = raw_x;
-	hxb.len = raw_x_len;
-	hxb.idx = 0;
-	hxb.jmp = 0;
+	memset(ctx.hx_orig, 0, ctx.sz_hx);
+	memset(ctx.hx_mask, 0, ctx.sz_hx);
 
 	if (opt_r)
-		getrandom(hxb.hx, hxb.sz_hx, 0);
+		getrandom(ctx.hx_orig, ctx.sz_hx, 0);
+	if (arg_k)
+		memcpy(ctx.hx_orig->key, raw_k, raw_k_len);
 
-	hx_init(hxb.hx, NULL, num_l, num_j,
-		*(uint32_t *)(raw_S),
-		*(uint32_t *)(raw_S + 4),
-		0);
+	ctx.hx_orig->jump_fn = hx_jump_fn(num_j);
+	ctx.hx_orig->key_jumps = num_j;
+	ctx.hx_orig->key_mask = num_l - 1;
 
 	if (!opt_r)
-		hxb.hx->v = 0;
+		ctx.hx_orig->v = 0;
+	if (arg_h)
+		ctx.hx_orig->v = num_h;
 
-	*hxb.hx_orig = *hxb.hx;
+	/* TODO: read input, populate ctx->pos */
 
 	signal(SIGUSR1, catch_sigusr1);
-
-	hx_brut(&hxb);
 
 	return 0;
 }
 
-static void hx_done(FILE *f, char *note, struct hxb_state *hxb)
-{
-	size_t out_len = (hxb->sz_key * 4 / 3 + 3) & ~3;
-	char *out = malloc(out_len + 1);
-
-	fprintf(f, "--%s------------------------------\n", note);
-
-	fprintf(f, "v: %#08x (%#08x)\n", hxb->hx_orig->v, hxb->hx_mask->v);
-
-	b64_encode(hxb->hx_orig->key, hxb->sz_key, out, out_len + 1);
-	fprintf(f, "k: %s\n", out);
-
-	b64_encode(hxb->hx_mask->key, hxb->sz_key, out, out_len + 1);
-	fprintf(f, "m: %s\n", out);
-
-	free(out);
-}
-
-static void hxb_check(struct hxb_state *hxb, char *where)
-{
-	struct hx_state *hx;
-	uint8_t *ciph;
-	size_t i;
-
-	if (!hxb_dbg_level)
-		return;
-
-	hx = malloc(hxb->sz_hx);
-	ciph = malloc(hxb->idx);
-
-	memcpy(hx, hxb->hx_orig, hxb->sz_hx);
-	hx_encrypt(hx, hxb->mesg, ciph, hxb->idx);
-
-	if (memcmp(ciph, hxb->ciph, hxb->idx)) {
-		hx_done(stderr, where, hxb);
-		fprintf(stderr, "current jump %zu at %zu of %zu\n",
-			hxb->jmp, hxb->idx, hxb->len);
-		hohha_dbg_level= ~0;
-		memcpy(hx, hxb->hx_orig, hxb->sz_hx);
-		hx_encrypt(hx, hxb->mesg, ciph, hxb->idx);
-		for (i = 0; i < hxb->idx; ++i)
-			if (ciph[i] != hxb->ciph[i])
-				break;
-		fprintf(stderr, "failed at idx %zu xor %#04hhx\n",
-			i, ciph[i] ^ hxb->ciph[i]);
-		exit(1);
-	}
-
-	free(hx);
-	free(ciph);
-}
-
-
-static void hx_brut_step(struct hxb_state *hxb)
-{
-	struct hx_state old_hx = *hxb->hx;
-	struct hx_state old_hx_orig = *hxb->hx_orig;
-	struct hx_state old_hx_mask = *hxb->hx_mask;
-
-	hxb_check(hxb, "#step#A#");
-
-	uint8_t xor_oops = hxb_step_xor(hxb) ^ hx_step_xor(hxb->hx);
-	uint8_t xor_mask = hxb_mask_v(hxb);
-	uint8_t xor_clash = xor_oops & xor_mask;
-	uint8_t xor_learn = xor_oops & ~xor_mask;
-
-	vdbg("xor_oops %#04hhx\n", xor_oops);
-	vdbg("xor_mask %#04hhx\n", xor_mask);
-	vdbg("xor_clash %#04hhx\n", xor_clash);
-	vdbg("xor_learn %#04hhx\n", xor_learn);
-
-	if (!xor_clash) {
-		if (hxb_interesting(hxb))
-			dbg("proceed at %zu of %zu\n", hxb->idx, hxb->len);
-
-		hxb_learn_v(hxb, 0xff, xor_learn);
-		hxb_step_crc(hxb);
-		++hxb->idx;
-		hxb->jmp = 0;
-
-		hx_brut(hxb);
-
-		--hxb->idx;
-		hxb->jmp = hxb->hx->key_jumps;
-		*hxb->hx = old_hx;
-		*hxb->hx_orig = old_hx_orig;
-		*hxb->hx_mask = old_hx_mask;
-	}
-
-	if (hxb_interesting(hxb))
-		dbg("backtrack at %zu of %zu\n", hxb->idx, hxb->len);
-
-	hxb_check(hxb, "#step#B#");
-}
-
-static void hx_brut_jump_next(struct hxb_state *hxb)
-{
-	struct hx_state old_hx = *hxb->hx;
-	size_t m = hxb->hx->m;
-	uint32_t j = hxb->jmp++;
-	uint32_t k = hxb->hx->key[m];
-
-	hxb_check(hxb, "#jump#A#");
-
-	if (hxb_have_key(hxb, m)) {
-		if (hxb_interesting(hxb))
-			dbg("jump %u at %zu of %zu existing key[%zu]\n",
-			    j, hxb->idx, hxb->len, m);
-
-		hxb_jump(hxb, j);
-
-		hx_brut(hxb);
-
-		*hxb->hx = old_hx;
-
-		hxb_check(hxb, "#jump#B#");
-	} else {
-		hxb_mask_key(hxb, m, ~0);
-
-		for (uint32_t x = hxb->hx->key[m]; x <= 0xff; ++x) {
-			if (hxb_interesting(hxb))
-				dbg("jump %u at %zu of %zu new key[%zu]=%#04x\n",
-				     j, hxb->idx, hxb->len, m, x);
-
-			hxb_guess_key(hxb, m, k + x);
-			hxb_jump(hxb, j);
-
-			hx_brut(hxb);
-
-			*hxb->hx = old_hx;
-		}
-
-		hxb_mask_key(hxb, m, 0);
-
-		hxb_check(hxb, "#jump#C#");
-	}
-
-	if (hxb_interesting(hxb))
-		dbg("backtrack jump %u at %zu of %zu\n",
-		    j, hxb->idx, hxb->len);
-
-	hxb->jmp = j;
-	hxb->hx->key[m] = k;
-}
-
-static void hx_brut_jump(struct hxb_state *hxb)
-{
-	struct hx_state old_hx = *hxb->hx;
-	struct hx_state old_hx_orig = *hxb->hx_orig;
-	struct hx_state old_hx_mask = *hxb->hx_mask;
-	uint32_t m_mask, v_mask, v_learn;
-
-	m_mask = hxb->hx->key_mask;
-	v_mask = m_mask & ~hxb_mask_v(hxb);
-
-	if (!v_mask || !(hxb->jmp & 1) == !(hxb->jmp & ~1)) {
-		hx_brut_jump_next(hxb);
-	} else {
-		for(v_learn = 0; v_learn <= m_mask; ++v_learn) {
-			if (v_learn & ~v_mask)
-				continue;
-
-			hxb_learn_v(hxb, v_mask, v_learn);
-
-			/* try the most constrained: key[m] chosen */
-			if (hxb_have_key(hxb, (hxb->hx->m ^ hxb->hx->v) & m_mask))
-				hx_brut_jump_next(hxb);
-
-			*hxb->hx = old_hx;
-			*hxb->hx_orig = old_hx_orig;
-			*hxb->hx_mask = old_hx_mask;
-		}
-		for(v_learn = 0; v_learn <= m_mask; ++v_learn) {
-			if (v_learn & ~v_mask)
-				continue;
-
-			hxb_learn_v(hxb, v_mask, v_learn);
-
-			/* try the rest: key[m] not chosen */
-			if (!hxb_have_key(hxb, (hxb->hx->m ^ hxb->hx->v) & m_mask))
-				hx_brut_jump_next(hxb);
-
-			*hxb->hx = old_hx;
-			*hxb->hx_orig = old_hx_orig;
-			*hxb->hx_mask = old_hx_mask;
-		}
-	}
-}
-
-static void hx_brut(struct hxb_state *hxb)
-{
-	if (done_sigusr1 != seen_sigusr1) {
-		done_sigusr1 = seen_sigusr1;
-		hx_done(stderr, "progress", hxb);
-		fprintf(stderr, "current jump %zu at %zu of %zu\n",
-			hxb->jmp, hxb->idx, hxb->len);
-		fprintf(stderr, "backtrack jump %zu at %zu of %zu\n",
-			hxb_ebt_jmp, hxb_ebt_idx, hxb->len);
-		hxb_ebt_idx = SIZE_MAX;
-		hxb_ebt_jmp = SIZE_MAX;
-	}
-
-	if (hxb->idx < hxb->len) {
-		if (hxb->jmp < hxb->hx->key_jumps)
-			hx_brut_jump(hxb);
-		else
-			hx_brut_step(hxb);
-	} else {
-		hx_done(stdout, "done----", hxb);
-	}
-
-	if (hxb->idx < hxb_ebt_idx) {
-		hxb_ebt_idx = hxb->idx;
-		hxb_ebt_jmp = hxb->jmp;
-	} else if (hxb->idx == hxb_ebt_idx) {
-		if (hxb->jmp < hxb_ebt_jmp)
-			hxb_ebt_jmp = hxb->jmp;
-	}
-}
