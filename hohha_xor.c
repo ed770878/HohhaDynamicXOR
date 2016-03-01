@@ -4,8 +4,6 @@
 #include "hohha_xor.h"
 #include "hohha_util.h"
 
-static void (*hx_jump_fn(int key_jumps))(struct hx_state *hx);
-
 void hx_init_key(struct hx_state *hx, uint8_t *key,
 		 uint32_t key_len, uint32_t key_jumps)
 {
@@ -103,9 +101,17 @@ void hx_jump3(struct hx_state *hx)
 	hx_vdbg(hx, "jump3");
 }
 
-void hx_jump(struct hx_state *hx)
+void hx_jump_n(struct hx_state *hx, uint32_t jmp)
 {
-	hx->jump_fn(hx);
+	uint32_t j0 = !!(jmp & 1);
+	uint32_t j1 = !!(jmp & ~1);
+
+	switch (j0 | (j1 << 1)) {
+	case 0: hx_jump0(hx); break;
+	case 1: hx_jump1(hx); break;
+	case 2: hx_jump2(hx); break;
+	case 3: hx_jump3(hx);
+	}
 }
 
 static void hx_jump_any(struct hx_state *hx)
@@ -203,7 +209,7 @@ static void hx_jump_opt8(struct hx_state *hx)
 	hx_jump3(hx);
 }
 
-static void (*hx_jump_fn(int key_jumps))(struct hx_state *hx)
+void (*hx_jump_fn(int key_jumps))(struct hx_state *hx)
 {
 	switch (key_jumps) {
 	case 2: return hx_jump_opt2;
@@ -215,6 +221,11 @@ static void (*hx_jump_fn(int key_jumps))(struct hx_state *hx)
 	case 8: return hx_jump_opt8;
 	}
 	return hx_jump_any;
+}
+
+void hx_jump(struct hx_state *hx)
+{
+	hx->jump_fn(hx);
 }
 
 uint8_t hx_step_xor(struct hx_state *hx)

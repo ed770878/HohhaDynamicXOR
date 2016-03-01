@@ -85,6 +85,16 @@ void hx_jump2(struct hx_state *hx);
 void hx_jump3(struct hx_state *hx);
 
 /**
+ * Perform the Nth jump.
+ */
+void hx_jump_n(struct hx_state *hx, uint32_t jmp);
+
+/**
+ * Get the most optimal jump function.
+ */
+void (*hx_jump_fn(int key_jumps))(struct hx_state *hx);
+
+/**
  * Perform the sequence of jumps, general case.
  */
 void hx_jump(struct hx_state *hx);
