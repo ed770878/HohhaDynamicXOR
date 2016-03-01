@@ -466,6 +466,7 @@ static void hxb_ctx_read(struct hxb_ctx *ctx)
 		pos->hx = hxb_hx_dup(ctx->hx_orig, ctx->sz_hx);
 		pos->hx->s1 = leu32(raw_S + 0);
 		pos->hx->s2 = leu32(raw_S + 4);
+		pos->hx->m = (pos->hx->s1 >> 24) * (pos->hx->s2 >> 24);
 		pos->mesg = malloc(raw_m_len);
 		pos->ciph = malloc(raw_x_len);
 		pos->len = raw_x_len;
@@ -649,8 +650,13 @@ int main(int argc, char **argv)
 		memcpy(ctx.hx_orig->key, raw_k, raw_k_len);
 
 	ctx.hx_orig->jump_fn = hx_jump_fn(num_j);
-	ctx.hx_orig->key_jumps = num_j;
 	ctx.hx_orig->key_mask = num_l - 1;
+	ctx.hx_orig->key_jumps = num_j;
+	ctx.hx_orig->s1 = 0;
+	ctx.hx_orig->s2 = 0;
+	ctx.hx_orig->m = 0;
+	ctx.hx_orig->cs = ~0;
+	ctx.hx_orig->opt = 0;
 
 	if (!opt_r)
 		ctx.hx_orig->v = 0;
