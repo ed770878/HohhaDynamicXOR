@@ -284,9 +284,7 @@ static uint32_t hxb_pos_need_v(struct hxb_pos *pos, struct hx_state *mask)
 
 static void hxb_pos_jump(struct hxb_pos *pos)
 {
-	size_t i = pos->idx;
-
-	hx_jump_n(pos->hx, i);
+	hx_jump_n(pos->hx, pos->jmp);
 }
 
 static int hxb_pos_step(struct hxb_pos *pos)
