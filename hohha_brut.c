@@ -491,6 +491,9 @@ static void hxb_ctx_read(struct hxb_ctx *ctx, FILE *f)
 		ctx->pos[pos_i] = pos;
 		ctx->pos_count = pos_i + 1;
 
+		dbg("pos[%zu] s1 %#x s2 %#x mesg %s ciph %s\n",
+		    pos_i, pos->hx->s1, pos->hx->s2, arg_m, arg_x);
+
 		free(arg_m);
 		free(arg_x);
 	}
