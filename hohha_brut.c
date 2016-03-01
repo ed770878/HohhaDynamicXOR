@@ -42,7 +42,19 @@ struct hxb_ctx {
 
 static void hxb_ctx_show(struct hxb_ctx *ctx, FILE *f, char *where)
 {
-	/* TODO */
+	size_t data_len = (ctx->sz_key * 4 / 3 + 3) & ~3;
+	char *data = malloc(data_len + 1);
+
+	fprintf(f, "--(%s)------------------------------------------\n", where);
+	fprintf(f, "v: %#x (%#x)\n", ctx->hx_orig->v, ctx->hx_mask->v);
+
+	b64_encode(ctx->hx_orig->key, ctx->sz_key, data, data_len + 1);
+	fprintf(f, "k: %s\n", data);
+
+	b64_encode(ctx->hx_mask->key, ctx->sz_key, data, data_len + 1);
+	fprintf(f, "m: %s\n", data);
+
+	free(data);
 }
 
 /* --- --- --- --- --- --- --- --- --- */
