@@ -64,6 +64,11 @@ static inline uint32_t incr32_mask(uint32_t word, uint32_t mask)
 	return word;
 }
 
+static inline int is_pow2(uintmax_t word)
+{
+	return !(word & (word - 1));
+}
+
 static inline uint8_t u8(uintmax_t word)
 {
 	return (uint8_t)word;
@@ -72,6 +77,11 @@ static inline uint8_t u8(uintmax_t word)
 static inline uint32_t u32(uintmax_t word)
 {
 	return (uint32_t)word;
+}
+
+static inline uint32_t leu32(uint8_t *bytes)
+{
+	return bytes[0] | (bytes[1] << 8) | (bytes[2] << 16) | (bytes[3] << 24);
 }
 
 #endif
