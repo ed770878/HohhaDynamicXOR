@@ -22,8 +22,8 @@ uint32_t crc32_data(uint8_t *data, uint32_t len);
 
 int b64_encode(const uint8_t* data_buf, size_t data_len,
 	       char* out_buf, size_t out_len);
-int b64_decode (const char *in_buf, size_t in_len,
-		uint8_t *out_buf, size_t *out_len);
+int b64_decode(const char *in_buf, size_t in_len,
+	       uint8_t *out_buf, size_t *out_len);
 
 static inline uint32_t rol32(uint32_t word, unsigned shift)
 {
