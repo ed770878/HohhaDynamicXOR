@@ -10,8 +10,6 @@
 #include "hohha_util.h"
 
 static int hxb_dbg_level;
-static size_t hxb_ebt_idx = SIZE_MAX;
-static size_t hxb_ebt_jmp = SIZE_MAX;
 
 volatile sig_atomic_t seen_sigusr1;
 volatile sig_atomic_t done_sigusr1;
@@ -39,6 +37,13 @@ struct hxb_ctx {
 	struct hx_state *hx_orig;	/* guessed original state */
 	struct hx_state *hx_mask;	/* mask of guessed bits */
 };
+
+/* --- --- --- --- --- --- --- --- --- */
+
+static void hxb_ctx_show(struct hxb_ctx *ctx, FILE *f, char *where)
+{
+	/* TODO */
+}
 
 /* --- --- --- --- --- --- --- --- --- */
 
@@ -222,6 +227,18 @@ static int hxb_pos_done(struct hxb_pos *pos)
 	return pos->idx == pos->len;
 }
 
+static int hxb_ctx_done(struct hxb_ctx *ctx)
+{
+	size_t i;
+
+	for (i = 0; i < ctx->pos_count; ++i)
+		if (!hxb_pos_done(ctx->pos[i]))
+			return 0;
+	return 1;
+}
+
+/* --- --- --- --- --- --- --- --- --- */
+
 static int hxb_pos_have_m(struct hxb_pos *pos, struct hx_state *mask)
 {
 	return !!mask->key[pos->hx->m];
@@ -303,10 +320,101 @@ static int hxb_ctx_adv(struct hxb_ctx *ctx)
 
 /* --- --- --- --- --- --- --- --- --- */
 
-/* -------- -------- -------- -------- */
-/* -------- -------- -------- -------- */
-/* -------- -------- -------- -------- */
-/* -------- -------- -------- -------- */
+static void hxb_ctx_brut(struct hxb_ctx *ctx);
+
+static int hxb_ctx_brut_v(struct hxb_ctx *ctx)
+{
+	struct hxb_ctx *dup;
+	size_t i;
+	uint32_t need;
+	uint32_t guess;
+
+	need = 0;
+	for (i = 0; i < ctx->pos_count; ++i)
+		need |= hxb_pos_need_v(ctx->pos[i], ctx->hx_mask);
+
+	if (!need)
+		return 0;
+
+	for (guess = 0; guess <= need; guess = incr32_mask(guess, need)) {
+		dup = hxb_ctx_dup(ctx);
+		hxb_ctx_mask_v(dup, need);
+		hxb_ctx_guess_v(dup, guess);
+
+		hxb_ctx_brut(dup);
+
+		hxb_ctx_free(dup);
+	}
+
+	return 1;
+}
+
+static int hxb_ctx_brut_m(struct hxb_ctx *ctx)
+{
+	struct hxb_ctx *dup;
+	size_t i;
+	uint32_t need;
+	uint32_t guess;
+
+	for (i = 0; i < ctx->pos_count; ++i) {
+		if (hxb_pos_have_m(ctx->pos[i], ctx->hx_mask))
+			continue;
+
+		/* TODO: count needs, sort by constraint */
+
+		need = hxb_pos_need_m(ctx->pos[i]);
+
+		for (guess = 0; guess <= 0xff; ++guess) {
+			dup = hxb_ctx_dup(ctx);
+			hxb_ctx_mask_key(dup, need);
+			hxb_ctx_guess_key(dup, need, guess);
+
+			hxb_ctx_brut(dup);
+
+			hxb_ctx_free(dup);
+		}
+	}
+
+	return 1;
+}
+
+static void hxb_ctx_brut(struct hxb_ctx *ctx)
+{
+	if (hxb_ctx_adv(ctx))
+		return;
+
+	if (hxb_dbg_level && hxb_ctx_check(ctx)) {
+		hxb_ctx_show(ctx, stderr, "fail");
+		exit(2);
+	}
+
+	if (done_sigusr1 != seen_sigusr1) {
+		done_sigusr1 = seen_sigusr1;
+		hxb_ctx_show(ctx, stderr, "info");
+	}
+
+	if (hxb_ctx_done(ctx)) {
+		hxb_ctx_show(ctx, stdout, "done");
+		return;
+	}
+
+	if (hxb_ctx_brut_v(ctx))
+		return;
+
+	if (hxb_ctx_brut_m(ctx))
+		return;
+
+	pr("Unreachable %s:%d\n", __FILE__, __LINE__);
+}
+
+/* --- --- --- --- --- --- --- --- --- */
+
+static void hxb_ctx_read(struct hxb_ctx *ctx)
+{
+	/* TODO: read input, populate ctx->pos */
+}
+
+/* --- --- --- --- --- --- --- --- --- */
 
 int main(int argc, char **argv)
 {
@@ -478,9 +586,11 @@ int main(int argc, char **argv)
 	if (arg_h)
 		ctx.hx_orig->v = num_h;
 
-	/* TODO: read input, populate ctx->pos */
+	hxb_ctx_read(&ctx);
 
 	signal(SIGUSR1, catch_sigusr1);
+
+	hxb_ctx_brut(&ctx);
 
 	return 0;
 }
