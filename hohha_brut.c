@@ -263,7 +263,7 @@ static uint32_t hxb_pos_need_m(struct hxb_pos *pos)
 
 static uint32_t hxb_pos_need_v(struct hxb_pos *pos, struct hx_state *mask)
 {
-	return mask->v & ror32(pos->hx->key_mask | 0xff, pos->idx & 31);
+	return ~mask->v & ror32(pos->hx->key_mask | 0xff, pos->idx & 31);
 }
 
 /* --- --- --- --- --- --- --- --- --- */
