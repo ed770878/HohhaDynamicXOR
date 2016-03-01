@@ -423,7 +423,69 @@ static void hxb_ctx_brut(struct hxb_ctx *ctx)
 
 static void hxb_ctx_read(struct hxb_ctx *ctx)
 {
-	/* TODO: read input, populate ctx->pos */
+	struct hxb_pos *pos;
+	size_t pos_i;
+	uint8_t raw_S[8];
+	char *arg_m;
+	char *arg_x;
+	size_t raw_m_len;
+	size_t raw_x_len;
+	int rc;
+
+	for (;;) {
+		arg_m = NULL;
+		arg_x = NULL;
+
+		rc = scanf("%hhu %hhu %hhu %hhu %hhu %hhu %hhu %hhu %ms %ms",
+			   &raw_S[0], &raw_S[1], &raw_S[2], &raw_S[3],
+			   &raw_S[4], &raw_S[5], &raw_S[6], &raw_S[7],
+			   &arg_m, &arg_x);
+
+		if (rc != 10)
+			goto err;
+
+		if (b64_decode(arg_m, strlen(arg_m), NULL, &raw_m_len))
+			goto err;
+
+		if (b64_decode(arg_x, strlen(arg_x), NULL, &raw_x_len))
+			goto err;
+
+		if (raw_m_len != raw_x_len)
+			goto err;
+
+		pos_i = ctx->pos_count;
+
+		if (!pos_i) {
+			ctx->pos = malloc(sizeof(*ctx->pos));
+		} else if (is_pow2(pos_i)) {
+			ctx->pos = realloc(ctx->pos, sizeof(*ctx->pos)
+					   * (pos_i << 1));
+		}
+
+		pos = malloc(sizeof(*pos));
+		pos->hx = hxb_hx_dup(ctx->hx_orig, ctx->sz_hx);
+		pos->hx->s1 = leu32(raw_S + 0);
+		pos->hx->s2 = leu32(raw_S + 4);
+		pos->mesg = malloc(raw_m_len);
+		pos->ciph = malloc(raw_x_len);
+		pos->len = raw_x_len;
+		pos->idx = 0;
+		pos->jmp = 0;
+
+		b64_decode(arg_m, strlen(arg_m), pos->mesg, &raw_m_len);
+		b64_decode(arg_x, strlen(arg_x), pos->ciph, &raw_x_len);
+
+		ctx->pos[pos_i] = pos;
+		ctx->pos_count = pos_i + 1;
+
+		free(arg_m);
+		free(arg_x);
+	}
+
+	return;
+err:
+	free(arg_m);
+	free(arg_x);
 }
 
 /* --- --- --- --- --- --- --- --- --- */
