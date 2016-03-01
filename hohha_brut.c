@@ -478,6 +478,7 @@ static void hxb_ctx_read(struct hxb_ctx *ctx, FILE *f)
 		pos->hx->s1 = leu32(raw_S + 0);
 		pos->hx->s2 = leu32(raw_S + 4);
 		pos->hx->m = (pos->hx->s1 >> 24) * (pos->hx->s2 >> 24);
+		pos->hx->m &= pos->hx->key_mask;
 		pos->mesg = malloc(raw_m_len);
 		pos->ciph = malloc(raw_x_len);
 		pos->len = raw_x_len;
