@@ -79,10 +79,10 @@ static int hxb_hx_check(struct hx_state *hx, uint8_t *mesg, uint8_t *ciph, size_
 		mesg_x = mesg[i];
 		ciph_x = ciph[i];
 
-		hx_step_crc(hx, mesg_x);
-
 		if (hx_step_xor(hx) != (mesg_x ^ ciph_x))
 			return -1;
+
+		hx_step_crc(hx, mesg_x);
 	}
 
 	return 0;
@@ -289,10 +289,11 @@ static int hxb_pos_step(struct hxb_pos *pos)
 	uint8_t mesg_x = pos->mesg[i];
 	uint8_t ciph_x = pos->ciph[i];
 
-	hx_step_crc(pos->hx, mesg_x);
-
 	if (hx_step_xor(pos->hx) != (mesg_x ^ ciph_x))
 		return -1;
+
+	hx_step_crc(pos->hx, mesg_x);
+
 	return 0;
 }
 
