@@ -640,8 +640,8 @@ int main(int argc, char **argv)
 
 	int opt_r = 0;
 	uint32_t num_j = 0;
-	uint32_t num_l = NULL;
-	uint32_t num_h = NULL;
+	uint32_t num_l = 0;
+	uint32_t num_h = 0;
 	uint8_t *raw_k = NULL;
 	size_t raw_k_len = 0;
 
