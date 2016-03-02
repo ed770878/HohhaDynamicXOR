@@ -377,28 +377,51 @@ static int hxb_ctx_brut_v(struct hxb_ctx *ctx)
 static int hxb_ctx_brut_m(struct hxb_ctx *ctx)
 {
 	struct hxb_ctx *dup;
-	size_t i;
-	uint32_t need;
+	size_t i, sz;
+	size_t *need_tmp;
+	size_t *need_val;
+	size_t *need_idx;
 	uint32_t guess;
+
+	sz = ctx->sz_key;
+	need_tmp = malloc(sizeof(*need_idx) * sz);
+	need_val = malloc(sizeof(*need_val) * sz);
+	need_idx = malloc(sizeof(*need_idx) * sz);
+	for (i = 0; i < sz; ++i) {
+		need_val[i] = 0;
+		need_idx[i] = i;
+	}
 
 	for (i = 0; i < ctx->pos_count; ++i) {
 		if (hxb_pos_have_m(ctx->pos[i], ctx->hx_mask))
 			continue;
 
-		/* TODO: count needs, sort by constraint */
+		++need_val[hxb_pos_need_m(ctx->pos[i])];
+	}
 
-		need = hxb_pos_need_m(ctx->pos[i]);
+	merge_sort(need_idx, need_val, need_tmp, 0, sz);
 
+	for (i = 0; i < sz; ++i)
+		if (!need_val[need_idx[i]])
+			break;
+	sz = i;
+
+	free(need_tmp);
+	free(need_val);
+
+	for (i = 0; i < sz; ++i) {
 		for (guess = 0; guess <= 0xff; ++guess) {
 			dup = hxb_ctx_dup(ctx);
-			hxb_ctx_mask_key(dup, need);
-			hxb_ctx_guess_key(dup, need, guess);
+			hxb_ctx_mask_key(dup, need_idx[i]);
+			hxb_ctx_guess_key(dup, need_idx[i], guess);
 
 			hxb_ctx_brut(dup);
 
 			hxb_ctx_free(dup);
 		}
 	}
+
+	free(need_idx);
 
 	return 1;
 }
