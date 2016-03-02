@@ -58,10 +58,12 @@ static void hxb_ctx_show(struct hxb_ctx *ctx, FILE *f, char *where)
 	b64_encode(ctx->hx_mask->key, ctx->sz_key, data, data_len + 1);
 	fprintf(f, "m: %s\n", data);
 
-	for (pos_i = 0; pos_i < ctx->pos_count; ++pos_i) {
-		pos = ctx->pos[pos_i];
-		fprintf(f, "pos[%zu]: jmp %zu idx %zu len %zu\n",
-			pos_i, pos->jmp, pos->idx, pos->len);
+	if (hohha_dbg_level) {
+		for (pos_i = 0; pos_i < ctx->pos_count; ++pos_i) {
+			pos = ctx->pos[pos_i];
+			fprintf(f, "pos[%zu]: jmp %zu idx %zu len %zu\n",
+				pos_i, pos->jmp, pos->idx, pos->len);
+		}
 	}
 
 	free(data);
