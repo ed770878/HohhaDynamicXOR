@@ -71,53 +71,28 @@ static void hxb_ctx_show(struct hxb_ctx *ctx, FILE *f, char *where)
 
 /* --- --- --- --- --- --- --- --- --- */
 
-static int hxb_hx_check(struct hx_state *hx, uint8_t *mesg, uint8_t *ciph, size_t len)
+void hxb_hx_free(struct hx_state *hx)
 {
-	size_t i;
-	uint8_t mesg_x;
-	uint8_t ciph_x;
-
-	for (i = 0; i < len; ++i) {
-		hx->jump_fn(hx);
-
-		mesg_x = mesg[i];
-		ciph_x = ciph[i];
-
-		if (hx_step_xor(hx) != (mesg_x ^ ciph_x))
-			return -1;
-
-		hx_step_crc(hx, mesg_x);
-	}
-
-	return 0;
+	free(hx);
 }
 
-static int hxb_ctx_check(struct hxb_ctx *ctx)
+void hxb_pos_free(struct hxb_pos *pos)
 {
-	struct hx_state *hx;
-	struct hxb_pos *pos;
+	hxb_hx_free(pos->hx);
+	free(pos);
+}
+
+void hxb_ctx_free(struct hxb_ctx *ctx)
+{
 	size_t i;
-	int rc = 0;
 
-	hx = malloc(ctx->sz_hx);
+	for (i = 0; i < ctx->pos_count; ++i)
+		hxb_pos_free(ctx->pos[i]);
 
-	for (i = 0; i < ctx->pos_count; ++i) {
-		pos = ctx->pos[i];
-
-		memcpy(hx, ctx->hx_orig, ctx->sz_hx);
-		hx->s1 = pos->s1;
-		hx->s2 = pos->s2;
-		hx->m = (pos->s1 >> 24) * (pos->s2 >> 24);
-		hx->m &= pos->hx->key_mask;
-
-		rc = hxb_hx_check(hx, pos->mesg, pos->ciph, pos->idx);
-		if (rc)
-			break;
-	}
-
-	free(hx);
-
-	return rc;
+	hxb_hx_free(ctx->hx_orig);
+	hxb_hx_free(ctx->hx_mask);
+	free(ctx->pos);
+	free(ctx);
 }
 
 /* --- --- --- --- --- --- --- --- --- */
@@ -170,28 +145,53 @@ struct hxb_ctx *hxb_ctx_dup(struct hxb_ctx *ctx)
 
 /* --- --- --- --- --- --- --- --- --- */
 
-void hxb_hx_free(struct hx_state *hx)
-{
-	free(hx);
-}
-
-void hxb_pos_free(struct hxb_pos *pos)
-{
-	hxb_hx_free(pos->hx);
-	free(pos);
-}
-
-void hxb_ctx_free(struct hxb_ctx *ctx)
+static int hxb_hx_check(struct hx_state *hx, uint8_t *mesg, uint8_t *ciph, size_t len)
 {
 	size_t i;
+	uint8_t mesg_x;
+	uint8_t ciph_x;
 
-	for (i = 0; i < ctx->pos_count; ++i)
-		hxb_pos_free(ctx->pos[i]);
+	for (i = 0; i < len; ++i) {
+		hx->jump_fn(hx);
 
-	hxb_hx_free(ctx->hx_orig);
-	hxb_hx_free(ctx->hx_mask);
-	free(ctx->pos);
-	free(ctx);
+		mesg_x = mesg[i];
+		ciph_x = ciph[i];
+
+		if (hx_step_xor(hx) != (mesg_x ^ ciph_x))
+			return -1;
+
+		hx_step_crc(hx, mesg_x);
+	}
+
+	return 0;
+}
+
+static int hxb_ctx_check(struct hxb_ctx *ctx)
+{
+	struct hx_state *hx;
+	struct hxb_pos *pos;
+	size_t i;
+	int rc = 0;
+
+	hx = malloc(ctx->sz_hx);
+
+	for (i = 0; i < ctx->pos_count; ++i) {
+		pos = ctx->pos[i];
+
+		memcpy(hx, ctx->hx_orig, ctx->sz_hx);
+		hx->s1 = pos->s1;
+		hx->s2 = pos->s2;
+		hx->m = (pos->s1 >> 24) * (pos->s2 >> 24);
+		hx->m &= pos->hx->key_mask;
+
+		rc = hxb_hx_check(hx, pos->mesg, pos->ciph, pos->idx);
+		if (rc)
+			break;
+	}
+
+	free(hx);
+
+	return rc;
 }
 
 /* --- --- --- --- --- --- --- --- --- */
