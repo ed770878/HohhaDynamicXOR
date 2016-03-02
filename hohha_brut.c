@@ -264,7 +264,7 @@ static int hxb_ctx_check(struct hxb_ctx *ctx)
 	size_t i;
 	int rc = 0;
 
-	hx = malloc(ctx->sz_hx);
+	hx = hxb_hx_alloc(ctx->sz_hx);
 
 	for (i = 0; i < ctx->pos_count; ++i) {
 		pos = ctx->pos[i];
@@ -280,7 +280,7 @@ static int hxb_ctx_check(struct hxb_ctx *ctx)
 			break;
 	}
 
-	free(hx);
+	hxb_hx_free(hx);
 
 	return rc;
 }
