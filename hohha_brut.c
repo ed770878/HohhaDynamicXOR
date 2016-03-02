@@ -71,13 +71,36 @@ static void hxb_ctx_show(struct hxb_ctx *ctx, FILE *f, char *where)
 
 /* --- --- --- --- --- --- --- --- --- */
 
+#define HXB_MAX_FREE (1u << 14)
+
+struct hx_state *hxb_hx_free_list[HXB_MAX_FREE];
+size_t hxb_hx_free_count;
+
+struct hxb_pos *hxb_pos_free_list[HXB_MAX_FREE];
+size_t hxb_pos_free_count;
+
+struct hxb_ctx *hxb_ctx_free_list[HXB_MAX_FREE];
+size_t hxb_ctx_free_count;
+
+/* --- --- --- --- --- --- --- --- --- */
+
 void hxb_hx_free(struct hx_state *hx)
 {
+	if (hxb_hx_free_count < HXB_MAX_FREE) {
+		hxb_hx_free_list[hxb_hx_free_count++] = hx;
+		return;
+	}
+
 	free(hx);
 }
 
 void hxb_pos_free(struct hxb_pos *pos)
 {
+	if (hxb_pos_free_count < HXB_MAX_FREE) {
+		hxb_pos_free_list[hxb_pos_free_count++] = pos;
+		return;
+	}
+
 	hxb_hx_free(pos->hx);
 	free(pos);
 }
@@ -85,6 +108,11 @@ void hxb_pos_free(struct hxb_pos *pos)
 void hxb_ctx_free(struct hxb_ctx *ctx)
 {
 	size_t i;
+
+	if (hxb_ctx_free_count < HXB_MAX_FREE) {
+		hxb_ctx_free_list[hxb_ctx_free_count++] = ctx;
+		return;
+	}
 
 	for (i = 0; i < ctx->pos_count; ++i)
 		hxb_pos_free(ctx->pos[i]);
@@ -101,6 +129,9 @@ struct hx_state *hxb_hx_alloc(size_t sz_hx)
 {
 	struct hx_state *dup;
 
+	if (hxb_hx_free_count)
+		return hxb_hx_free_list[--hxb_hx_free_count];
+
 	dup = malloc(sz_hx);
 
 	return dup;
@@ -109,6 +140,9 @@ struct hx_state *hxb_hx_alloc(size_t sz_hx)
 struct hxb_pos *hxb_pos_alloc(size_t sz_hx)
 {
 	struct hxb_pos *dup;
+
+	if (hxb_pos_free_count)
+		return hxb_pos_free_list[--hxb_pos_free_count];
 
 	dup = malloc(sizeof(*dup));
 	dup->hx = hxb_hx_alloc(sz_hx);
@@ -120,6 +154,9 @@ struct hxb_ctx *hxb_ctx_alloc(size_t pos_count, size_t sz_hx)
 {
 	struct hxb_ctx *dup;
 	size_t i;
+
+	if (hxb_ctx_free_count)
+		return hxb_ctx_free_list[--hxb_ctx_free_count];
 
 	dup = malloc(sizeof(*dup));
 	dup->pos = malloc(sizeof(*dup->pos) * pos_count);
