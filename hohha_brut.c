@@ -97,12 +97,82 @@ void hxb_ctx_free(struct hxb_ctx *ctx)
 
 /* --- --- --- --- --- --- --- --- --- */
 
-struct hx_state *hxb_hx_dup(struct hx_state *hx, size_t sz_hx)
+struct hx_state *hxb_hx_alloc(size_t sz_hx)
 {
 	struct hx_state *dup;
 
 	dup = malloc(sz_hx);
+
+	return dup;
+}
+
+struct hxb_pos *hxb_pos_alloc(size_t sz_hx)
+{
+	struct hxb_pos *dup;
+
+	dup = malloc(sizeof(*dup));
+	dup->hx = hxb_hx_alloc(sz_hx);
+
+	return dup;
+}
+
+struct hxb_ctx *hxb_ctx_alloc(size_t pos_count, size_t sz_hx)
+{
+	struct hxb_ctx *dup;
+	size_t i;
+
+	dup = malloc(sizeof(*dup));
+	dup->pos = malloc(sizeof(*dup->pos) * pos_count);
+	dup->hx_orig = hxb_hx_alloc(sz_hx);
+	dup->hx_mask = hxb_hx_alloc(sz_hx);
+
+	for (i = 0; i < pos_count; ++i)
+		dup->pos[i] = hxb_pos_alloc(sz_hx);
+
+	return dup;
+}
+
+/* --- --- --- --- --- --- --- --- --- */
+
+void hxb_hx_cpy(struct hx_state *dup, struct hx_state *hx, size_t sz_hx)
+{
 	memcpy(dup, hx, sz_hx);
+}
+
+void hxb_pos_cpy(struct hxb_pos *dup, struct hxb_pos *pos, size_t sz_hx)
+{
+	dup->s1 = pos->s1;
+	dup->s2 = pos->s2;
+	hxb_hx_cpy(dup->hx, pos->hx, sz_hx);
+	dup->mesg = pos->mesg;
+	dup->ciph = pos->ciph;
+	dup->len = pos->len;
+	dup->idx = pos->idx;
+	dup->jmp = pos->jmp;
+}
+
+void hxb_ctx_cpy(struct hxb_ctx *dup, struct hxb_ctx *ctx)
+{
+	size_t i;
+
+	hxb_hx_cpy(dup->hx_orig, ctx->hx_orig, ctx->sz_hx);
+	hxb_hx_cpy(dup->hx_mask, ctx->hx_mask, ctx->sz_hx);
+	dup->pos_count = ctx->pos_count;
+	dup->sz_key = ctx->sz_key;
+	dup->sz_hx = ctx->sz_hx;
+
+	for (i = 0; i < ctx->pos_count; ++i)
+		hxb_pos_cpy(dup->pos[i], ctx->pos[i], ctx->sz_hx);
+}
+
+/* --- --- --- --- --- --- --- --- --- */
+
+struct hx_state *hxb_hx_dup(struct hx_state *hx, size_t sz_hx)
+{
+	struct hx_state *dup;
+
+	dup = hxb_hx_alloc(sz_hx);
+	hxb_hx_cpy(dup, hx, sz_hx);
 
 	return dup;
 }
@@ -111,15 +181,8 @@ struct hxb_pos *hxb_pos_dup(struct hxb_pos *pos, size_t sz_hx)
 {
 	struct hxb_pos *dup;
 
-	dup = malloc(sizeof(*dup));
-	dup->s1 = pos->s1;
-	dup->s2 = pos->s2;
-	dup->hx = hxb_hx_dup(pos->hx, sz_hx);
-	dup->mesg = pos->mesg;
-	dup->ciph = pos->ciph;
-	dup->len = pos->len;
-	dup->idx = pos->idx;
-	dup->jmp = pos->jmp;
+	dup = hxb_pos_alloc(sz_hx);
+	hxb_pos_cpy(dup, pos, sz_hx);
 
 	return dup;
 }
@@ -127,18 +190,9 @@ struct hxb_pos *hxb_pos_dup(struct hxb_pos *pos, size_t sz_hx)
 struct hxb_ctx *hxb_ctx_dup(struct hxb_ctx *ctx)
 {
 	struct hxb_ctx *dup;
-	size_t i;
 
-	dup = malloc(sizeof(*dup));
-	dup->pos = malloc(sizeof(*dup->pos) * ctx->pos_count);
-	dup->hx_orig = hxb_hx_dup(ctx->hx_orig, ctx->sz_hx);
-	dup->hx_mask = hxb_hx_dup(ctx->hx_mask, ctx->sz_hx);
-	dup->pos_count = ctx->pos_count;
-	dup->sz_key = ctx->sz_key;
-	dup->sz_hx = ctx->sz_hx;
-
-	for (i = 0; i < ctx->pos_count; ++i)
-		dup->pos[i] = hxb_pos_dup(ctx->pos[i], ctx->sz_hx);
+	dup = hxb_ctx_alloc(ctx->pos_count, ctx->sz_hx);
+	hxb_ctx_cpy(dup, ctx);
 
 	return dup;
 }
