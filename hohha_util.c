@@ -1,3 +1,5 @@
+#include <string.h>
+
 #include "hohha_util.h"
 
 unsigned hohha_dbg_level;
@@ -227,4 +229,32 @@ int b64_decode (const char *in_buf, size_t in_len,
 	*out_len = out_i;
 
 	return 0;
+}
+
+void merge_sort(size_t *idx, size_t *val, size_t *tmp, size_t sa, size_t sz)
+{
+	size_t i, i1, i2, sb, count = sz - sa;
+
+	if (count < 2)
+		return;
+
+	sb = (sa + sz) >> 1;
+
+	merge_sort(idx, val, tmp, sa, sb);
+	merge_sort(idx, val, tmp, sb, sz);
+
+	memcpy(tmp + sa, idx + sa, sizeof(*idx) * count);
+
+	i1 = sa;
+	i2 = sb;
+	for (i = sa; i < sz; ++i) {
+		if (i1 == sb)
+			idx[i] = tmp[i2++];
+		else if (i2 == sz)
+			idx[i] = tmp[i1++];
+		else if (val[tmp[i1]] < val[tmp[i2]])
+			idx[i] = tmp[i2++];
+		else
+			idx[i] = tmp[i1++];
+	}
 }
