@@ -105,11 +105,11 @@ cd brut
 
 # inspect the example:
 # brut-j2-k128-t1000-key.txt - has the secret key body
-# brut-j2-k128-t1000-mesg.txt - has pairs of known plain and cipher text
+# brut-j2-k128-t1000-msg.txt - has pairs of known plain and cipher text
 
 cd ..
 
-# we will use only the -mesg.txt in the attack
+# we will use only the -msg.txt in the attack
 ./hohha_brut -j2 -l128 -r -f brut/brut-j2-k128-t1000-msg.txt | tee brut-log.txt
 
 # go brew yourself a nice cup of tea while you wait a few minutes
