@@ -159,9 +159,27 @@ cd tests
 ./runtests.sh ../hohha
 ```
 
+## Further reading
+
+Announcement on the [Linux Kernel Mailing List][lkml].
+
+Reaction article on [Phoronix][phnx].
+
+A [conference presentation][conf] and [paper (Turkish language)][paper]
+([English translation][trans]) describing the algorithm.
+
+The [reference implementation][upstream] from which this is forked.
+
 [claim]: https://github.com/ikizir/HohhaDynamicXOR/wiki/Reliability
 [slaw]: https://www.schneier.com/blog/archives/2011/04/schneiers_law.html
 [kpa]: https://en.wikipedia.org/wiki/Known-plaintext_attack
+[mcv]: https://books.google.com/books?id=8jZBksh-bUMC&hl=en
 [sbox]: https://en.wikipedia.org/wiki/S-box
 [pull13]: https://github.com/ikizir/HohhaDynamicXOR/pull/13
 [attacks]: attacks/README.md
+[lkml]: https://lkml.org/lkml/2015/11/18/9
+[phnx]: https://www.phoronix.com/scan.php?page=news_item&px=Dev-Fast-Unbreakable-Encrypt
+[conf]: http://inet-tr.org.tr/inetconf20/ozet/69.html
+[paper]: http://inet-tr.org.tr/inetconf20/bildiri/69.pdf
+[trans]: https://translate.google.com/translate?hl=en&sl=tr&u=http://inet-tr.org.tr/inetconf20/bildiri/69.pdf
+[upstream]: https://github.com/ikizir/HohhaDynamicXOR
