@@ -31,6 +31,12 @@ struct hxb_pos {
 	size_t jmp;			/* current jump */
 };
 
+struct hxb_ord {
+	size_t next;			/* next guess number */
+	size_t count;			/* fixed guessing order length */
+	uint32_t m[];			/* fixed guessing order */
+};
+
 struct hxb_ctx {
 	size_t sz_key;			/* size of key */
 	size_t sz_hx;			/* size of state */
@@ -38,6 +44,7 @@ struct hxb_ctx {
 	struct hxb_pos **pos;		/* cipher positions */
 	struct hx_state *hx_orig;	/* guessed original state */
 	struct hx_state *hx_mask;	/* mask of guessed bits */
+	struct hxb_ord *ord;		/* fixed guessing order */
 };
 
 /* --- --- --- --- --- --- --- --- --- */
@@ -67,6 +74,29 @@ static void hxb_ctx_show(struct hxb_ctx *ctx, FILE *f, char *where)
 	}
 
 	free(data);
+}
+
+/* --- --- --- --- --- --- --- --- --- */
+
+static void hxb_ord_fix(struct hxb_ord *ord, uint32_t m)
+{
+	size_t i;
+
+	for (i = 0; i < ord->count; ++i)
+		if (ord->m[i] == m)
+			return;
+
+	ord->m[ord->count++] = m;
+}
+
+static uint32_t hxb_ord_next(struct hxb_ord *ord)
+{
+	return ord->m[ord->next++];
+}
+
+static void hxb_ord_prev(struct hxb_ord *ord)
+{
+	--ord->next;
 }
 
 /* --- --- --- --- --- --- --- --- --- */
@@ -197,6 +227,7 @@ static void hxb_ctx_cpy(struct hxb_ctx *dup, struct hxb_ctx *ctx)
 	dup->pos_count = ctx->pos_count;
 	dup->sz_key = ctx->sz_key;
 	dup->sz_hx = ctx->sz_hx;
+	dup->ord = ctx->ord;
 
 	for (i = 0; i < ctx->pos_count; ++i)
 		hxb_pos_cpy(dup->pos[i], ctx->pos[i], ctx->sz_hx);
@@ -204,7 +235,7 @@ static void hxb_ctx_cpy(struct hxb_ctx *dup, struct hxb_ctx *ctx)
 
 /* --- --- --- --- --- --- --- --- --- */
 
-struct hx_state *hxb_hx_dup(struct hx_state *hx, size_t sz_hx)
+static struct hx_state *hxb_hx_dup(struct hx_state *hx, size_t sz_hx)
 {
 	struct hx_state *dup;
 
@@ -214,7 +245,7 @@ struct hx_state *hxb_hx_dup(struct hx_state *hx, size_t sz_hx)
 	return dup;
 }
 
-struct hxb_pos *hxb_pos_dup(struct hxb_pos *pos, size_t sz_hx)
+static struct hxb_pos *hxb_pos_dup(struct hxb_pos *pos, size_t sz_hx)
 {
 	struct hxb_pos *dup;
 
@@ -224,7 +255,7 @@ struct hxb_pos *hxb_pos_dup(struct hxb_pos *pos, size_t sz_hx)
 	return dup;
 }
 
-struct hxb_ctx *hxb_ctx_dup(struct hxb_ctx *ctx)
+static struct hxb_ctx *hxb_ctx_dup(struct hxb_ctx *ctx)
 {
 	struct hxb_ctx *dup;
 
@@ -469,14 +500,12 @@ static int hxb_ctx_brut_v(struct hxb_ctx *ctx)
 	return 1;
 }
 
-static int hxb_ctx_brut_m(struct hxb_ctx *ctx)
+static void hxb_ctx_ord_fix(struct hxb_ctx *ctx)
 {
-	struct hxb_ctx *dup;
 	size_t i, sz;
 	size_t *need_tmp;
 	size_t *need_val;
 	size_t *need_idx;
-	uint32_t guess;
 
 	sz = ctx->sz_key;
 	need_tmp = malloc(sizeof(*need_idx) * sz);
@@ -496,27 +525,38 @@ static int hxb_ctx_brut_m(struct hxb_ctx *ctx)
 
 	merge_sort(need_idx, need_val, need_tmp, 0, sz);
 
-	for (i = 0; i < sz; ++i)
+	for (i = 0; i < sz; ++i) {
 		if (!need_val[need_idx[i]])
 			break;
-	sz = i;
+
+		hxb_ord_fix(ctx->ord, need_idx[i]);
+	}
 
 	free(need_tmp);
 	free(need_val);
+	free(need_idx);
+}
 
-	for (i = 0; i < sz; ++i) {
-		for (guess = 0; guess <= 0xff; ++guess) {
-			dup = hxb_ctx_dup(ctx);
-			hxb_ctx_mask_key(dup, need_idx[i]);
-			hxb_ctx_guess_key(dup, need_idx[i], guess);
+static int hxb_ctx_brut_m(struct hxb_ctx *ctx)
+{
+	struct hxb_ctx *dup;
+	uint32_t m, guess;
 
-			hxb_ctx_brut(dup);
+	hxb_ctx_ord_fix(ctx);
 
-			hxb_ctx_free(dup);
-		}
+	m = hxb_ord_next(ctx->ord);
+
+	for (guess = 0; guess <= 0xff; ++guess) {
+		dup = hxb_ctx_dup(ctx);
+		hxb_ctx_mask_key(dup, m);
+		hxb_ctx_guess_key(dup, m, guess);
+
+		hxb_ctx_brut(dup);
+
+		hxb_ctx_free(dup);
 	}
 
-	free(need_idx);
+	hxb_ord_prev(ctx->ord);
 
 	return 1;
 }
@@ -784,6 +824,10 @@ int main(int argc, char **argv)
 	ctx.pos = NULL;
 	ctx.hx_orig = malloc(ctx.sz_hx);
 	ctx.hx_mask = malloc(ctx.sz_hx);
+	ctx.ord = malloc(sizeof(*ctx.ord) +
+			 sizeof(*ctx.ord->m) * ctx.sz_key);
+	ctx.ord->next = 0;
+	ctx.ord->count = 0;
 
 	memset(ctx.hx_orig, 0, ctx.sz_hx);
 	memset(ctx.hx_mask, 0, ctx.sz_hx);
