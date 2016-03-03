@@ -97,12 +97,11 @@ initialized to zero, even when the high bits of the other salt are changed.  If
 there are enough jumps so that all of the bits in the salt affect the output,
 then the attack is ineffective.
 
-This attack is also statistically less effective against high numbers of jumps
-and relatively short key lengths.  With each jump, one byte of the key body is
-changed.  If that position in the key body is retrieved in a later jump, it
-will effect the output.  To mitigate the effect of the changing key body, the
-attack can be repeated with different values of salt, to increase the
-statistical power of the attack against the effect of the changing key body.
+This attack can be fooled if two different jumps through the key body, although
+affected by the salt, still produce the same byte of cipher text as output.  To
+mitigate the effect of this occurring, the attack can be repeated with
+different values of salt, to increase the statistical power of the attack
+against output collisions.
 
 ### Plain Text Recovery
 
