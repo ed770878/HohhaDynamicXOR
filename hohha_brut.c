@@ -301,6 +301,8 @@ static void hxb_ctx_guess_key(struct hxb_ctx *ctx, uint32_t m, uint32_t x)
 {
 	size_t i;
 
+	x ^= ctx->hx_orig->key[m];
+
 	hxb_hx_guess_key(ctx->hx_orig, m, x);
 
 	for (i = 0; i < ctx->pos_count; ++i)
