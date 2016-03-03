@@ -84,7 +84,7 @@ size_t hxb_ctx_free_count;
 
 /* --- --- --- --- --- --- --- --- --- */
 
-void hxb_hx_free(struct hx_state *hx)
+static void hxb_hx_free(struct hx_state *hx)
 {
 	if (hxb_hx_free_count < HXB_MAX_FREE) {
 		hxb_hx_free_list[hxb_hx_free_count++] = hx;
@@ -94,7 +94,7 @@ void hxb_hx_free(struct hx_state *hx)
 	free(hx);
 }
 
-void hxb_pos_free(struct hxb_pos *pos)
+static void hxb_pos_free(struct hxb_pos *pos)
 {
 	if (hxb_pos_free_count < HXB_MAX_FREE) {
 		hxb_pos_free_list[hxb_pos_free_count++] = pos;
@@ -105,7 +105,7 @@ void hxb_pos_free(struct hxb_pos *pos)
 	free(pos);
 }
 
-void hxb_ctx_free(struct hxb_ctx *ctx)
+static void hxb_ctx_free(struct hxb_ctx *ctx)
 {
 	size_t i;
 
@@ -125,7 +125,7 @@ void hxb_ctx_free(struct hxb_ctx *ctx)
 
 /* --- --- --- --- --- --- --- --- --- */
 
-struct hx_state *hxb_hx_alloc(size_t sz_hx)
+static struct hx_state *hxb_hx_alloc(size_t sz_hx)
 {
 	struct hx_state *dup;
 
@@ -137,7 +137,7 @@ struct hx_state *hxb_hx_alloc(size_t sz_hx)
 	return dup;
 }
 
-struct hxb_pos *hxb_pos_alloc(size_t sz_hx)
+static struct hxb_pos *hxb_pos_alloc(size_t sz_hx)
 {
 	struct hxb_pos *dup;
 
@@ -150,7 +150,7 @@ struct hxb_pos *hxb_pos_alloc(size_t sz_hx)
 	return dup;
 }
 
-struct hxb_ctx *hxb_ctx_alloc(size_t pos_count, size_t sz_hx)
+static struct hxb_ctx *hxb_ctx_alloc(size_t pos_count, size_t sz_hx)
 {
 	struct hxb_ctx *dup;
 	size_t i;
@@ -171,12 +171,12 @@ struct hxb_ctx *hxb_ctx_alloc(size_t pos_count, size_t sz_hx)
 
 /* --- --- --- --- --- --- --- --- --- */
 
-void hxb_hx_cpy(struct hx_state *dup, struct hx_state *hx, size_t sz_hx)
+static void hxb_hx_cpy(struct hx_state *dup, struct hx_state *hx, size_t sz_hx)
 {
 	memcpy(dup, hx, sz_hx);
 }
 
-void hxb_pos_cpy(struct hxb_pos *dup, struct hxb_pos *pos, size_t sz_hx)
+static void hxb_pos_cpy(struct hxb_pos *dup, struct hxb_pos *pos, size_t sz_hx)
 {
 	dup->s1 = pos->s1;
 	dup->s2 = pos->s2;
@@ -188,7 +188,7 @@ void hxb_pos_cpy(struct hxb_pos *dup, struct hxb_pos *pos, size_t sz_hx)
 	dup->jmp = pos->jmp;
 }
 
-void hxb_ctx_cpy(struct hxb_ctx *dup, struct hxb_ctx *ctx)
+static void hxb_ctx_cpy(struct hxb_ctx *dup, struct hxb_ctx *ctx)
 {
 	size_t i;
 
