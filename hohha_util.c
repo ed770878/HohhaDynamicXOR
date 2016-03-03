@@ -73,17 +73,30 @@ const uint32_t crc32_table[256] = {
 	0xbe2da0a5, 0x4c4623a6, 0x5f16d052, 0xad7d5351
 };
 
-uint32_t crc32_byte(uint32_t crc, uint8_t word)
+static uint32_t __crc32_byte(uint32_t crc, uint8_t word)
 {
 	return crc32_table[word ^ (crc >> 24)] ^ (crc << 8);
+}
+
+uint32_t crc32_byte(uint32_t crc, uint8_t word)
+{
+	uint32_t ret = __crc32_byte(crc, word);
+
+	vvdbg("%#08x <- %#08x, %#hhx\n", ret, crc, word);
+
+	return ret;
 }
 
 uint32_t crc32_data(uint8_t *data, uint32_t len)
 {
 	uint32_t i, crc = ~0;
 
+	vvdbg("%#08x <- ~0\n", crc);
+
 	for (i = 0; i < len; ++i)
 		crc = crc32_byte(crc, data[i]);
+
+	vvdbg("%#08x <- ~%#08x\n", ~crc, crc);
 
 	return ~crc;
 }
