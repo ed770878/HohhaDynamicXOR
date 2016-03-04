@@ -21,7 +21,8 @@ Some examples have been provided.
   - Takes longer than a few hours to solve.
 - brut-j2-l128-t1000-msg.txt
   - Takes under an hour to solve (23 minutes)
-  - A different t1000 example was solved in about 1 minute
+- brut-j2-l128-t1000-msg-easy.txt
+  - Solved in about one minute
 - brut-j4-l128-t2000-msg.txt
   - Four jumps! Starting with solution shows it *can* be solved, but...
   - Starting with random takes longer than a few hours to solve.
