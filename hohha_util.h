@@ -27,6 +27,8 @@ int b64_decode(const char *in_buf, size_t in_len,
 
 void merge_sort(size_t *idx, size_t *val, size_t *tmp, size_t sa, size_t sz);
 
+size_t max_idx(size_t *val, size_t sz);
+
 static inline uint32_t rol32(uint32_t word, unsigned shift)
 {
 	return (word << shift) | (word >> (32 - shift));

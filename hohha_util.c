@@ -271,3 +271,14 @@ void merge_sort(size_t *idx, size_t *val, size_t *tmp, size_t sa, size_t sz)
 			idx[i] = tmp[i1++];
 	}
 }
+
+size_t max_idx(size_t *val, size_t sz)
+{
+	size_t i, m = 0;
+
+	for (i = 0; i < sz; ++i)
+		if (val[i] > val[m])
+			m = i;
+
+	return m;
+}
