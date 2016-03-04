@@ -525,12 +525,7 @@ static void hxb_ctx_ord_fix(struct hxb_ctx *ctx)
 
 	merge_sort(need_idx, need_val, need_tmp, 0, sz);
 
-	for (i = 0; i < sz; ++i) {
-		if (!need_val[need_idx[i]])
-			break;
-
-		hxb_ord_fix(ctx->ord, need_idx[i]);
-	}
+	hxb_ord_fix(ctx->ord, need_idx[0]);
 
 	free(need_tmp);
 	free(need_val);
