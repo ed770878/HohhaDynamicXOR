@@ -503,18 +503,12 @@ static int hxb_ctx_brut_v(struct hxb_ctx *ctx)
 static void hxb_ctx_ord_fix(struct hxb_ctx *ctx)
 {
 	size_t i, sz;
-	size_t *need_tmp;
 	size_t *need_val;
-	size_t *need_idx;
 
 	sz = ctx->sz_key;
-	need_tmp = malloc(sizeof(*need_idx) * sz);
+
 	need_val = malloc(sizeof(*need_val) * sz);
-	need_idx = malloc(sizeof(*need_idx) * sz);
-	for (i = 0; i < sz; ++i) {
-		need_val[i] = 0;
-		need_idx[i] = i;
-	}
+	memset(need_val, 0, sizeof(*need_val) * sz);
 
 	for (i = 0; i < ctx->pos_count; ++i) {
 		if (hxb_pos_have_m(ctx->pos[i], ctx->hx_mask))
@@ -523,13 +517,9 @@ static void hxb_ctx_ord_fix(struct hxb_ctx *ctx)
 		++need_val[hxb_pos_need_m(ctx->pos[i])];
 	}
 
-	merge_sort(need_idx, need_val, need_tmp, 0, sz);
+	hxb_ord_fix(ctx->ord, max_idx(need_val, sz));
 
-	hxb_ord_fix(ctx->ord, need_idx[0]);
-
-	free(need_tmp);
 	free(need_val);
-	free(need_idx);
 }
 
 static int hxb_ctx_brut_m(struct hxb_ctx *ctx)
