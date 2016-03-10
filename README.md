@@ -48,10 +48,28 @@ From scientific point of view, "considering already having a value in the key" i
 
 Original salt value is used only for one purpose: To encrypt individual salt values for every plaintext to be encrypted!
 If "shameless" is talking about the "packet salt values", he doesn't explain us how he obtains it: 
-We protect individual salt values with brute force attack complexity of 2 ^ ( 192 + ( 4 + 8 ) * 40 ) = 2 ^ ( 192 + 12 * 40) = 2 ^ ( 192 + 480 ) = 2^672 
+We protect individual salt values with brute force attack complexity of 2 ^ ( 192 + ( 4 + 8 ) * 40 ) = 2 ^ ( 192 + 12 * 40) = 2 ^ ( 192 + 480 ) = 2 ^ 672 
 But, the shameless, claims revealing our key body in "a few minutes"!
 
-He is really "the definition of being shameless"!
+OK! In order to better understand of 2 ^ Something values, I'll give concrete numbers:
+
+Wikipedia says that the most powerful computer of the world today, can break 56 bit DES encryption with brute force attack in 399 seconds.
+That means, we need 798 seconds to break 57 bits with brute force.
+That means, we need 798 * 2 seconds to break 58 bits with brute force.
+That means, we need 798 * 4 seconds to break 59 bits with brute force.
+...
+We need (399 * 2 ^ 40)/(60 * 60 * 24 * 365) = 13,911,248.7152 YEARS to break 96 bits with brute force.
+We need (399 * 2 ^ 41)/(60 * 60 * 24 * 365) = 27,822,497.4304 =  YEARS to break 97 bits with brute force.
+We need (399 * 2 ^ 42)/(60 * 60 * 24 * 365) = 55,644,994.8608 =  YEARS to break 98 bits with brute force.
+... Imagine the rest
+
+And understand this: You can see different "flavors" of this algorithm here. But all have a common point:
+They have at least, at least "192" bits "Initial state" brute force attack complexity! 
+What does it mean? Not even "for breaking", in order to "try" to start a meaningful attack, they must explain how they "obtain" 192 bit random value :) That's why, Oscar the shameless avoids that part and directly dives to cryptography wonkie junkie humpy part :) 192 bits means practically "infinite" number of years(At least, I can't multiply every time by two and write the numbers here). 
+
+Why Oscar and his masters "have to" do this? Because, it is their end! Computers are fast and resourceful. I am demonstrating here, that, any experienced developer can create good cryptosystems that "professional cryptographers" can't break! 
+
+Oscar, is really "the definition" of being shameless!
 
 But he's shameless! It is his duty! He is doing all this for a reason! 
 
@@ -86,7 +104,7 @@ The overall brute force attack complexity for the raw encryption algorithm is :
 Last but not least, we protect the plaintext with extra random padding bytes. But I don't want to mention here, about the practical difficulties to obtain both ciphertext and plaintext here, since, information theory let them "suppose" having the plaintext in their "fictif" world :)
 
 As we told, our shameless, is quoting from Bruce Schneier. He admits that, it's an honor to be like him! And apparently, he's exactly like him! 
-Because, apparantly, Bruce Scneier, is making so ridiculous suppositions that some people created a site to enumarate some "facts" about him. 
+Because, apparantly, Bruce Schneier, is making so ridiculous suppositions that some people created a site to enumarate some "facts" about him. 
 https://www.schneierfacts.com/
 
 There are many. But I can't resist to quote two of them here :)
@@ -94,6 +112,10 @@ There are many. But I can't resist to quote two of them here :)
 * When Bruce Schneier observes a quantum particle, it remains in the same state until he has finished observing it.
 * Bruce Schneier knows the state of schroedinger's cat
 
+I am hearing you, telling to yourself: "Will 192 bits initial state provide enough security in future? The computers are developing by a factor of 2 every year"!
+You gave the answer: In future, we can double the size of "Salt" values, and use 128 bit salt values instead of 64.
+We can double, triple key sizes.
+In fact, there is no reason for me to not to do it now. I just don't want to overkill.
 
 ## Contacts
 
