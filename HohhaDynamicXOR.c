@@ -535,7 +535,7 @@ unsigned int digital_crc32(uint8_t *buf, size_t len)
 // Note that reading from /dev/urandom is a slow operation
 // For real life application, we recommend to use /dev/urandom for only key generation and another, faster, cryptographically secure random generator for random padding data
 // If you increase RANDOM_BUF_SIZE, you will see dramatic speed gains on Packet benchmarks
-#define RANDOM_BUF_SIZE 65536
+#define RANDOM_BUF_SIZE 1024*1024
 uint8_t RandomBuf[RANDOM_BUF_SIZE];
 
 uint32_t RandomBufStartPos=999999999; // It must be a number greater than RANDOM_BUF_SIZE for initialization
@@ -603,10 +603,18 @@ uint64_t GetRandomUInt64(void)
   RandomBufStartPos += sizeof(uint64_t);
   return *((uint64_t *)(RandomBuf + RandomBufStartPos-sizeof(uint64_t)));
 }
+
 void GetRandomNumbersForPadding(uint32_t ByteCount, uint8_t *Buffer)
 { // You can use another faster random generator here
   // For IOS, we can simply use arc4random_buf(void *buf, size_t nbytes); function
   GetRandomNumbers(ByteCount, Buffer);
+  /*unsigned int t;
+  uint8_t *dp = Buffer;
+  for (t=0; t<ByteCount; t++)
+  {
+    *dp = rand()&255;
+    ++dp;
+  }*/
 }
 
 // Standart C has not ROL or ROR function, but most modern cpus has instructions for circular shift operations
@@ -727,7 +735,8 @@ void xorAnalyzeKey(uint8_t *K)
  * when the receiver receives the packet, decrypts the new salt value with the original salt value of the key and passes that salt value to function,
  * and decrypts packet body with that salt value. This method prevents "known plaintext" attacks amongst others.
  */
-#define DISABLE_HAND_OPTIMIZED_FNCS
+//define DISABLE_HAND_OPTIMIZED_FNCS
+
 uint32_t xorEncrypt(uint8_t *K, uint8_t *Salt, uint32_t KeyCheckSum, size_t InOutDataLen, uint8_t *InOutBuf)
 { // Encrypts message and returns CRC32 of the PLAINTEXT!
   // SaltData is a SALT_SIZE bytes uint8 array! 
@@ -750,11 +759,13 @@ uint32_t xorEncrypt(uint8_t *K, uint8_t *Salt, uint32_t KeyCheckSum, size_t InOu
   //   To hide our key body elements
   //     We XOR at least two body elements(jumps) with each other.
   //     We use a third dynamic variable initially set to Key CRC and dynamically updated according to plaintext checksum
+  //     We create two distinct uint32 variables from Salt data: Salt1 and Salt which are dynamically updated during jumps
+  //     We create two another uint32 variable  X and Y, by combining randomly chosen body elements according to salt
   //     We update key body elements according to Salt values
   //     We update salt data according to key body elements
   //     Our jump start point and steps are hidden
   //     We use the previous XOR values obtained to XOR with the next XOR values(chaining)
-  register uint32_t Salt1,Salt2;
+  register uint32_t Salt1,Salt2, X, Y;
   register size_t t = InOutDataLen;
   register uint8_t tt;
   register uint32_t M; // This is our moving pointer on key body bytes
@@ -768,8 +779,12 @@ uint32_t xorEncrypt(uint8_t *K, uint8_t *Salt, uint32_t KeyCheckSum, size_t InOu
   // We compute our start values as much randomly as possible upon salt(or nonce or iv) value which is transmitted with every data to be encrypted or decrypted
   Salt1 = ((uint32_t)(Salt[0]) | ((uint32_t)(Salt[1]) << 8) | ((uint32_t)(Salt[2]) << 16) | ((uint32_t)(Salt[3]) << 24));
   Salt2 = ((uint32_t)(Salt[4]) | ((uint32_t)(Salt[5]) << 8) | ((uint32_t)(Salt[6]) << 16) | ((uint32_t)(Salt[7]) << 24));
+  
+  X = !(((uint32_t)(Body[Salt[3]&BodyMask]) | ((uint32_t)(Body[Salt[4]&BodyMask]) << 8) | ((uint32_t)(Body[Salt[0]&BodyMask]) << 16) | ((uint32_t)(Body[Salt[6]&BodyMask]) << 24)));
+  Y = !((uint32_t)(Body[Salt[7]&BodyMask]) | ((uint32_t)(Body[Salt[2]&BodyMask]) << 8) | ((uint32_t)(Body[Salt[1]&BodyMask]) << 16) | ((uint32_t)(Body[Salt[5]&BodyMask]) << 24));
+  
   // Our initial jump position in the key body depends on a random value
-  M = ((((uint32_t)Salt[3]) * ((uint32_t)Salt[7]))) & BodyMask;
+  M = X & BodyMask;
   
   while (t--)
   { 
@@ -791,21 +806,22 @@ uint32_t xorEncrypt(uint8_t *K, uint8_t *Salt, uint32_t KeyCheckSum, size_t InOu
       if (tt&1)
       {
         Salt2 ^= (uint32_t)(Body[M]);
-        Body[M] = (uint8_t)(Salt1); 
+        //Body[M] = (uint8_t)(Salt1) ^ X; 
         M = (M^Salt1) & BodyMask; 
         ROR32_1(Salt1);
       }
       else {
         Salt1 ^= (uint32_t)(Body[M]);
-        Body[M] = (uint8_t)(Salt2); 
+        //Body[M] = (uint8_t)(Salt2); 
         M = (M^V) & BodyMask; 
         ROL32_1(Salt2);
       }
     }
     Checksum = CRC32Table[*p ^ ((Checksum >> 24) & 0xff)] ^ (Checksum << 8); 
-    *p ^= ((uint8_t)(Salt1^Salt2^V));
-    V ^= Checksum;
-    ROL32_1(V);
+    *p ^= (uint8_t)(Salt1 ^ Salt2 ^ V ^ X ^ Y);
+    X ^= (uint32_t)((Body[Salt1 & BodyMask] &  Body[Salt2 & BodyMask])); ROL32_1(X);
+    Y ^= (uint32_t)(Body[V & BodyMask]); ROR32_1(Y);
+    V ^= Checksum;ROL32_1(V);
     p++;
   }
   return Checksum ^ 0xffffffff;
@@ -814,7 +830,7 @@ uint32_t xorEncrypt(uint8_t *K, uint8_t *Salt, uint32_t KeyCheckSum, size_t InOu
 uint32_t xorDecrypt(uint8_t *K, uint8_t *Salt, uint32_t KeyCheckSum, size_t InOutDataLen, uint8_t *InOutBuf)
 { // Decrypts message and returns CRC32 of the PLAINTEXT
   // SaltData is a 8 bytes uint8 array! 
-  register uint32_t Salt1,Salt2;
+  register uint32_t Salt1,Salt2, X, Y;
   register size_t t = InOutDataLen;
   register uint8_t tt;
   register uint32_t M; // This is our moving pointer on key body bytes
@@ -826,14 +842,17 @@ uint32_t xorDecrypt(uint8_t *K, uint8_t *Salt, uint32_t KeyCheckSum, size_t InOu
   memcpy(Body,K+SP_BODY, BodyMask+1);
   p = InOutBuf;
   // We compute our start values as much randomly as possible upon salt(or nonce or iv) value which is transmitted with every data to be encrypted or decrypted
-  Salt1 = (uint32_t)(Salt[0]) | ((uint32_t)(Salt[1]) << 8) | ((uint32_t)(Salt[2]) << 16) | ((uint32_t)(Salt[3]) << 24);
-  Salt2 = (uint32_t)(Salt[4]) | ((uint32_t)(Salt[5]) << 8) | ((uint32_t)(Salt[6]) << 16) | ((uint32_t)(Salt[7]) << 24);
+  Salt1 = ((uint32_t)(Salt[0]) | ((uint32_t)(Salt[1]) << 8) | ((uint32_t)(Salt[2]) << 16) | ((uint32_t)(Salt[3]) << 24));
+  Salt2 = ((uint32_t)(Salt[4]) | ((uint32_t)(Salt[5]) << 8) | ((uint32_t)(Salt[6]) << 16) | ((uint32_t)(Salt[7]) << 24));
+  
+  X = !(((uint32_t)(Body[Salt[3]&BodyMask]) | ((uint32_t)(Body[Salt[4]&BodyMask]) << 8) | ((uint32_t)(Body[Salt[0]&BodyMask]) << 16) | ((uint32_t)(Body[Salt[6]&BodyMask]) << 24)));
+  Y = !((uint32_t)(Body[Salt[7]&BodyMask]) | ((uint32_t)(Body[Salt[2]&BodyMask]) << 8) | ((uint32_t)(Body[Salt[1]&BodyMask]) << 16) | ((uint32_t)(Body[Salt[5]&BodyMask]) << 24));
+  
   // Our initial jump position in the key body depends on a random value
-  M = ((((uint32_t)Salt[3]) * ((uint32_t)Salt[7]))) & BodyMask;
-  //printf("Salt1: %u Salt2: %u M: %u\n ",Salt1,Salt2,M);
+  M = X & BodyMask;
+  
   while (t--)
   { 
-    //V ^= ((uint32_t)1 << (uint32_t)(M&(uint32_t)31));
     // First jump point
     Salt1 ^= (uint32_t)(Body[M]);
     Body[M] = (uint8_t)(Salt2); 
@@ -852,21 +871,22 @@ uint32_t xorDecrypt(uint8_t *K, uint8_t *Salt, uint32_t KeyCheckSum, size_t InOu
       if (tt&1)
       {
         Salt2 ^= (uint32_t)(Body[M]);
-        Body[M] = (uint8_t)(Salt1); 
+        //Body[M] = (uint8_t)(Salt1); 
         M = (M^Salt1) & BodyMask; 
         ROR32_1(Salt1);
       }
       else {
         Salt1 ^= (uint32_t)(Body[M]);
-        Body[M] = (uint8_t)(Salt2); 
+        //Body[M] = (uint8_t)(Salt2); 
         M = (M^V) & BodyMask; 
         ROL32_1(Salt2);
       }
     }
-    *p ^= ((uint8_t)(Salt1^Salt2^V));
+    *p ^= (uint8_t)(Salt1 ^ Salt2 ^ V ^ X ^ Y);
     Checksum = CRC32Table[*p ^ ((Checksum >> 24) & 0xff)] ^ (Checksum << 8); 
-    V ^= Checksum;
-    ROL32_1(V);
+    X ^= (uint32_t)((Body[Salt1 & BodyMask] &  Body[Salt2 & BodyMask])); ROL32_1(X);
+    Y ^= (uint32_t)(Body[V & BodyMask]); ROR32_1(Y);
+    V ^= Checksum;ROL32_1(V);
     p++;
   }
   return Checksum ^ 0xffffffff;
@@ -887,7 +907,7 @@ static inline THOPDecryptorFnc xorGetProperHOPDecryptorFnc(uint8_t *Key)
 #else
 uint32_t xorEncryptHOP2(uint8_t *K, uint8_t *Salt, uint32_t KeyCheckSum, size_t InOutDataLen, uint8_t *InOutBuf)
 {
-  register uint32_t Salt1,Salt2;
+  register uint32_t Salt1,Salt2, X, Y;
   register size_t t = InOutDataLen;
   register uint32_t M; // This is our moving pointer on key body bytes
   register uint32_t Checksum=0xffffffff, V = KeyCheckSum;
@@ -900,8 +920,12 @@ uint32_t xorEncryptHOP2(uint8_t *K, uint8_t *Salt, uint32_t KeyCheckSum, size_t 
   // We compute our start values as much randomly as possible upon salt(or nonce or iv) value which is transmitted with every data to be encrypted or decrypted
   Salt1 = ((uint32_t)(Salt[0]) | ((uint32_t)(Salt[1]) << 8) | ((uint32_t)(Salt[2]) << 16) | ((uint32_t)(Salt[3]) << 24));
   Salt2 = ((uint32_t)(Salt[4]) | ((uint32_t)(Salt[5]) << 8) | ((uint32_t)(Salt[6]) << 16) | ((uint32_t)(Salt[7]) << 24));
+  
+  X = !(((uint32_t)(Body[Salt[3]&BodyMask]) | ((uint32_t)(Body[Salt[4]&BodyMask]) << 8) | ((uint32_t)(Body[Salt[0]&BodyMask]) << 16) | ((uint32_t)(Body[Salt[6]&BodyMask]) << 24)));
+  Y = !((uint32_t)(Body[Salt[7]&BodyMask]) | ((uint32_t)(Body[Salt[2]&BodyMask]) << 8) | ((uint32_t)(Body[Salt[1]&BodyMask]) << 16) | ((uint32_t)(Body[Salt[5]&BodyMask]) << 24));
+  
   // Our initial jump position in the key body depends on a random value
-  M = ((((uint32_t)Salt[3]) * ((uint32_t)Salt[7]))) & BodyMask;
+  M = X & BodyMask;
   
   while (t--)
   { 
@@ -918,9 +942,10 @@ uint32_t xorEncryptHOP2(uint8_t *K, uint8_t *Salt, uint32_t KeyCheckSum, size_t 
     ROR32_1(Salt1);
     
     Checksum = CRC32Table[*p ^ ((Checksum >> 24) & 0xff)] ^ (Checksum << 8); 
-    *p ^= ((uint8_t)(Salt1^Salt2^V));
-    V ^= Checksum;
-    ROL32_1(V);
+    *p ^= (uint8_t)(Salt1 ^ Salt2 ^ V ^ X ^ Y);
+    X ^= (uint32_t)((Body[Salt1 & BodyMask] &  Body[Salt2 & BodyMask])); ROL32_1(X);
+    Y ^= (uint32_t)(Body[V & BodyMask]); ROR32_1(Y);
+    V ^= Checksum;ROL32_1(V);
     p++;
   }
   return Checksum ^ 0xffffffff;
@@ -928,7 +953,7 @@ uint32_t xorEncryptHOP2(uint8_t *K, uint8_t *Salt, uint32_t KeyCheckSum, size_t 
 
 uint32_t xorDecryptHOP2(uint8_t *K, uint8_t *Salt, uint32_t KeyCheckSum, size_t InOutDataLen, uint8_t *InOutBuf)
 {
-  register uint32_t Salt1,Salt2;
+  register uint32_t Salt1,Salt2, X, Y;
   register size_t t = InOutDataLen;
   register uint32_t M; // This is our moving pointer on key body bytes
   register uint32_t Checksum=0xffffffff, V = KeyCheckSum;
@@ -941,9 +966,13 @@ uint32_t xorDecryptHOP2(uint8_t *K, uint8_t *Salt, uint32_t KeyCheckSum, size_t 
   // We compute our start values as much randomly as possible upon salt(or nonce or iv) value which is transmitted with every data to be encrypted or decrypted
   Salt1 = ((uint32_t)(Salt[0]) | ((uint32_t)(Salt[1]) << 8) | ((uint32_t)(Salt[2]) << 16) | ((uint32_t)(Salt[3]) << 24));
   Salt2 = ((uint32_t)(Salt[4]) | ((uint32_t)(Salt[5]) << 8) | ((uint32_t)(Salt[6]) << 16) | ((uint32_t)(Salt[7]) << 24));
+  
+  X = !(((uint32_t)(Body[Salt[3]&BodyMask]) | ((uint32_t)(Body[Salt[4]&BodyMask]) << 8) | ((uint32_t)(Body[Salt[0]&BodyMask]) << 16) | ((uint32_t)(Body[Salt[6]&BodyMask]) << 24)));
+  Y = !((uint32_t)(Body[Salt[7]&BodyMask]) | ((uint32_t)(Body[Salt[2]&BodyMask]) << 8) | ((uint32_t)(Body[Salt[1]&BodyMask]) << 16) | ((uint32_t)(Body[Salt[5]&BodyMask]) << 24));
+  
   // Our initial jump position in the key body depends on a random value
-  M = ((((uint32_t)Salt[3]) * ((uint32_t)Salt[7]))) & BodyMask;
-  //printf("Salt1: %u Salt2: %u M: %u\n ",Salt1,Salt2,M);
+  M = X & BodyMask;
+  
   while (t--)
   { 
     // First jump point
@@ -958,10 +987,11 @@ uint32_t xorDecryptHOP2(uint8_t *K, uint8_t *Salt, uint32_t KeyCheckSum, size_t 
     M = (M^V) & BodyMask; 
     ROR32_1(Salt1);
     
-    *p ^= ((uint8_t)(Salt1^Salt2^V));
+    *p ^= (uint8_t)(Salt1 ^ Salt2 ^ V ^ X ^ Y);
     Checksum = CRC32Table[*p ^ ((Checksum >> 24) & 0xff)] ^ (Checksum << 8); 
-    V ^= Checksum;
-    ROL32_1(V);
+    X ^= (uint32_t)((Body[Salt1 & BodyMask] &  Body[Salt2 & BodyMask])); ROL32_1(X);
+    Y ^= (uint32_t)(Body[V & BodyMask]); ROR32_1(Y);
+    V ^= Checksum;ROL32_1(V);
     p++;
   }
   return Checksum ^ 0xffffffff;
@@ -969,7 +999,7 @@ uint32_t xorDecryptHOP2(uint8_t *K, uint8_t *Salt, uint32_t KeyCheckSum, size_t 
 
 uint32_t xorEncryptHOP3(uint8_t *K, uint8_t *Salt, uint32_t KeyCheckSum, size_t InOutDataLen, uint8_t *InOutBuf)
 {
-  register uint32_t Salt1,Salt2;
+  register uint32_t Salt1,Salt2, X, Y;
   register size_t t = InOutDataLen;
   register uint32_t M; // This is our moving pointer on key body bytes
   register uint32_t Checksum=0xffffffff, V = KeyCheckSum;
@@ -982,8 +1012,12 @@ uint32_t xorEncryptHOP3(uint8_t *K, uint8_t *Salt, uint32_t KeyCheckSum, size_t 
   // We compute our start values as much randomly as possible upon salt(or nonce or iv) value which is transmitted with every data to be encrypted or decrypted
   Salt1 = ((uint32_t)(Salt[0]) | ((uint32_t)(Salt[1]) << 8) | ((uint32_t)(Salt[2]) << 16) | ((uint32_t)(Salt[3]) << 24));
   Salt2 = ((uint32_t)(Salt[4]) | ((uint32_t)(Salt[5]) << 8) | ((uint32_t)(Salt[6]) << 16) | ((uint32_t)(Salt[7]) << 24));
+  
+  X = !(((uint32_t)(Body[Salt[3]&BodyMask]) | ((uint32_t)(Body[Salt[4]&BodyMask]) << 8) | ((uint32_t)(Body[Salt[0]&BodyMask]) << 16) | ((uint32_t)(Body[Salt[6]&BodyMask]) << 24)));
+  Y = !((uint32_t)(Body[Salt[7]&BodyMask]) | ((uint32_t)(Body[Salt[2]&BodyMask]) << 8) | ((uint32_t)(Body[Salt[1]&BodyMask]) << 16) | ((uint32_t)(Body[Salt[5]&BodyMask]) << 24));
+  
   // Our initial jump position in the key body depends on a random value
-  M = ((((uint32_t)Salt[3]) * ((uint32_t)Salt[7]))) & BodyMask;
+  M = X & BodyMask;
   
   while (t--)
   { 
@@ -999,15 +1033,18 @@ uint32_t xorEncryptHOP3(uint8_t *K, uint8_t *Salt, uint32_t KeyCheckSum, size_t 
     M = (M^V) & BodyMask; 
     ROR32_1(Salt1);
     
+    // Following jumps
+    
     Salt1 ^= (uint32_t)(Body[M]);
-    Body[M] = (uint8_t)(Salt2); 
+    //Body[M] = (uint8_t)(Salt2); 
     M = (M^V) & BodyMask; 
     ROL32_1(Salt2);
-    
+      
     Checksum = CRC32Table[*p ^ ((Checksum >> 24) & 0xff)] ^ (Checksum << 8); 
-    *p ^= ((uint8_t)(Salt1^Salt2^V));
-    V ^= Checksum;
-    ROL32_1(V);
+    *p ^= (uint8_t)(Salt1 ^ Salt2 ^ V ^ X ^ Y);
+    X ^= (uint32_t)((Body[Salt1 & BodyMask] &  Body[Salt2 & BodyMask])); ROL32_1(X);
+    Y ^= (uint32_t)(Body[V & BodyMask]); ROR32_1(Y);
+    V ^= Checksum;ROL32_1(V);
     p++;
   }
   return Checksum ^ 0xffffffff;
@@ -1015,7 +1052,7 @@ uint32_t xorEncryptHOP3(uint8_t *K, uint8_t *Salt, uint32_t KeyCheckSum, size_t 
 
 uint32_t xorDecryptHOP3(uint8_t *K, uint8_t *Salt, uint32_t KeyCheckSum, size_t InOutDataLen, uint8_t *InOutBuf)
 {
-  register uint32_t Salt1,Salt2;
+  register uint32_t Salt1,Salt2, X, Y;
   register size_t t = InOutDataLen;
   register uint32_t M; // This is our moving pointer on key body bytes
   register uint32_t Checksum=0xffffffff, V = KeyCheckSum;
@@ -1028,8 +1065,12 @@ uint32_t xorDecryptHOP3(uint8_t *K, uint8_t *Salt, uint32_t KeyCheckSum, size_t 
   // We compute our start values as much randomly as possible upon salt(or nonce or iv) value which is transmitted with every data to be encrypted or decrypted
   Salt1 = ((uint32_t)(Salt[0]) | ((uint32_t)(Salt[1]) << 8) | ((uint32_t)(Salt[2]) << 16) | ((uint32_t)(Salt[3]) << 24));
   Salt2 = ((uint32_t)(Salt[4]) | ((uint32_t)(Salt[5]) << 8) | ((uint32_t)(Salt[6]) << 16) | ((uint32_t)(Salt[7]) << 24));
+  
+  X = !(((uint32_t)(Body[Salt[3]&BodyMask]) | ((uint32_t)(Body[Salt[4]&BodyMask]) << 8) | ((uint32_t)(Body[Salt[0]&BodyMask]) << 16) | ((uint32_t)(Body[Salt[6]&BodyMask]) << 24)));
+  Y = !((uint32_t)(Body[Salt[7]&BodyMask]) | ((uint32_t)(Body[Salt[2]&BodyMask]) << 8) | ((uint32_t)(Body[Salt[1]&BodyMask]) << 16) | ((uint32_t)(Body[Salt[5]&BodyMask]) << 24));
+  
   // Our initial jump position in the key body depends on a random value
-  M = ((((uint32_t)Salt[3]) * ((uint32_t)Salt[7]))) & BodyMask;
+  M = X & BodyMask;
   
   while (t--)
   { 
@@ -1045,15 +1086,18 @@ uint32_t xorDecryptHOP3(uint8_t *K, uint8_t *Salt, uint32_t KeyCheckSum, size_t 
     M = (M^V) & BodyMask; 
     ROR32_1(Salt1);
     
+    // Following jumps
+    
     Salt1 ^= (uint32_t)(Body[M]);
-    Body[M] = (uint8_t)(Salt2); 
+    //Body[M] = (uint8_t)(Salt2); 
     M = (M^V) & BodyMask; 
     ROL32_1(Salt2);
     
-    *p ^= ((uint8_t)(Salt1^Salt2^V));
+    *p ^= (uint8_t)(Salt1 ^ Salt2 ^ V ^ X ^ Y);
     Checksum = CRC32Table[*p ^ ((Checksum >> 24) & 0xff)] ^ (Checksum << 8); 
-    V ^= Checksum;
-    ROL32_1(V);
+    X ^= (uint32_t)((Body[Salt1 & BodyMask] &  Body[Salt2 & BodyMask])); ROL32_1(X);
+    Y ^= (uint32_t)(Body[V & BodyMask]); ROR32_1(Y);
+    V ^= Checksum;ROL32_1(V);
     p++;
   }
   return Checksum ^ 0xffffffff;
@@ -1061,7 +1105,7 @@ uint32_t xorDecryptHOP3(uint8_t *K, uint8_t *Salt, uint32_t KeyCheckSum, size_t 
 
 uint32_t xorEncryptHOP4(uint8_t *K, uint8_t *Salt, uint32_t KeyCheckSum, size_t InOutDataLen, uint8_t *InOutBuf)
 {
-  register uint32_t Salt1,Salt2;
+  register uint32_t Salt1,Salt2, X, Y;
   register size_t t = InOutDataLen;
   register uint32_t M; // This is our moving pointer on key body bytes
   register uint32_t Checksum=0xffffffff, V = KeyCheckSum;
@@ -1074,8 +1118,12 @@ uint32_t xorEncryptHOP4(uint8_t *K, uint8_t *Salt, uint32_t KeyCheckSum, size_t 
   // We compute our start values as much randomly as possible upon salt(or nonce or iv) value which is transmitted with every data to be encrypted or decrypted
   Salt1 = ((uint32_t)(Salt[0]) | ((uint32_t)(Salt[1]) << 8) | ((uint32_t)(Salt[2]) << 16) | ((uint32_t)(Salt[3]) << 24));
   Salt2 = ((uint32_t)(Salt[4]) | ((uint32_t)(Salt[5]) << 8) | ((uint32_t)(Salt[6]) << 16) | ((uint32_t)(Salt[7]) << 24));
+  
+  X = !(((uint32_t)(Body[Salt[3]&BodyMask]) | ((uint32_t)(Body[Salt[4]&BodyMask]) << 8) | ((uint32_t)(Body[Salt[0]&BodyMask]) << 16) | ((uint32_t)(Body[Salt[6]&BodyMask]) << 24)));
+  Y = !((uint32_t)(Body[Salt[7]&BodyMask]) | ((uint32_t)(Body[Salt[2]&BodyMask]) << 8) | ((uint32_t)(Body[Salt[1]&BodyMask]) << 16) | ((uint32_t)(Body[Salt[5]&BodyMask]) << 24));
+  
   // Our initial jump position in the key body depends on a random value
-  M = ((((uint32_t)Salt[3]) * ((uint32_t)Salt[7]))) & BodyMask;
+  M = X & BodyMask;
   
   while (t--)
   { 
@@ -1092,20 +1140,22 @@ uint32_t xorEncryptHOP4(uint8_t *K, uint8_t *Salt, uint32_t KeyCheckSum, size_t 
     ROR32_1(Salt1);
     
     // Following jumps
+    
     Salt1 ^= (uint32_t)(Body[M]);
-    Body[M] = (uint8_t)(Salt2); 
+    //Body[M] = (uint8_t)(Salt2); 
     M = (M^V) & BodyMask; 
     ROL32_1(Salt2);
     
     Salt2 ^= (uint32_t)(Body[M]);
-    Body[M] = (uint8_t)(Salt1); 
+    //Body[M] = (uint8_t)(Salt1) ^ X; 
     M = (M^Salt1) & BodyMask; 
     ROR32_1(Salt1);
-    
+
     Checksum = CRC32Table[*p ^ ((Checksum >> 24) & 0xff)] ^ (Checksum << 8); 
-    *p ^= ((uint8_t)(Salt1^Salt2^V));
-    V ^= Checksum;
-    ROL32_1(V);
+    *p ^= (uint8_t)(Salt1 ^ Salt2 ^ V ^ X ^ Y);
+    X ^= (uint32_t)((Body[Salt1 & BodyMask] &  Body[Salt2 & BodyMask])); ROL32_1(X);
+    Y ^= (uint32_t)(Body[V & BodyMask]); ROR32_1(Y);
+    V ^= Checksum;ROL32_1(V);
     p++;
   }
   return Checksum ^ 0xffffffff;
@@ -1113,7 +1163,7 @@ uint32_t xorEncryptHOP4(uint8_t *K, uint8_t *Salt, uint32_t KeyCheckSum, size_t 
 
 uint32_t xorDecryptHOP4(uint8_t *K, uint8_t *Salt, uint32_t KeyCheckSum, size_t InOutDataLen, uint8_t *InOutBuf)
 {
-  register uint32_t Salt1,Salt2;
+  register uint32_t Salt1,Salt2, X, Y;
   register size_t t = InOutDataLen;
   register uint32_t M; // This is our moving pointer on key body bytes
   register uint32_t Checksum=0xffffffff, V = KeyCheckSum;
@@ -1126,8 +1176,12 @@ uint32_t xorDecryptHOP4(uint8_t *K, uint8_t *Salt, uint32_t KeyCheckSum, size_t 
   // We compute our start values as much randomly as possible upon salt(or nonce or iv) value which is transmitted with every data to be encrypted or decrypted
   Salt1 = ((uint32_t)(Salt[0]) | ((uint32_t)(Salt[1]) << 8) | ((uint32_t)(Salt[2]) << 16) | ((uint32_t)(Salt[3]) << 24));
   Salt2 = ((uint32_t)(Salt[4]) | ((uint32_t)(Salt[5]) << 8) | ((uint32_t)(Salt[6]) << 16) | ((uint32_t)(Salt[7]) << 24));
+  
+  X = !(((uint32_t)(Body[Salt[3]&BodyMask]) | ((uint32_t)(Body[Salt[4]&BodyMask]) << 8) | ((uint32_t)(Body[Salt[0]&BodyMask]) << 16) | ((uint32_t)(Body[Salt[6]&BodyMask]) << 24)));
+  Y = !((uint32_t)(Body[Salt[7]&BodyMask]) | ((uint32_t)(Body[Salt[2]&BodyMask]) << 8) | ((uint32_t)(Body[Salt[1]&BodyMask]) << 16) | ((uint32_t)(Body[Salt[5]&BodyMask]) << 24));
+  
   // Our initial jump position in the key body depends on a random value
-  M = ((((uint32_t)Salt[3]) * ((uint32_t)Salt[7]))) & BodyMask;
+  M = X & BodyMask;
   
   while (t--)
   { 
@@ -1144,20 +1198,22 @@ uint32_t xorDecryptHOP4(uint8_t *K, uint8_t *Salt, uint32_t KeyCheckSum, size_t 
     ROR32_1(Salt1);
     
     // Following jumps
+    
     Salt1 ^= (uint32_t)(Body[M]);
-    Body[M] = (uint8_t)(Salt2); 
+    //Body[M] = (uint8_t)(Salt2); 
     M = (M^V) & BodyMask; 
     ROL32_1(Salt2);
     
     Salt2 ^= (uint32_t)(Body[M]);
-    Body[M] = (uint8_t)(Salt1); 
+    //Body[M] = (uint8_t)(Salt1) ^ X; 
     M = (M^Salt1) & BodyMask; 
     ROR32_1(Salt1);
-    
-    *p ^= ((uint8_t)(Salt1^Salt2^V));
+
+    *p ^= (uint8_t)(Salt1 ^ Salt2 ^ V ^ X ^ Y);
     Checksum = CRC32Table[*p ^ ((Checksum >> 24) & 0xff)] ^ (Checksum << 8); 
-    V ^= Checksum;
-    ROL32_1(V);
+    X ^= (uint32_t)((Body[Salt1 & BodyMask] &  Body[Salt2 & BodyMask])); ROL32_1(X);
+    Y ^= (uint32_t)(Body[V & BodyMask]); ROR32_1(Y);
+    V ^= Checksum;ROL32_1(V);
     p++;
   }
   return Checksum ^ 0xffffffff;
@@ -1187,7 +1243,7 @@ static inline THOPDecryptorFnc xorGetProperHOPDecryptorFnc(uint8_t *Key)
 /* --------------------- HOHHA PROTOCOL SPECIFIC FUNCTIONS --------------- */
 // The number of random padding bytes before the salt value in header. We use those random numbers in order to better hide our packet salt value. 
 // The minimum value is 1, maximum is 8. We use 4 as default in Hohha Messenger. 
-#define HEADER_SALT_PADDING_SIZE 1
+#define HEADER_SALT_PADDING_SIZE 4
 // Hohha communication header structure:
 // 1 byte AlignedLenSize which describes the size of the variable which describes the length of the plaintext body, in bytes
 // SALT_PADDING_SIZE byte dummy random byte(against known plaintext attacks)
@@ -1962,9 +2018,10 @@ ssize_t EncryptBMPFile(const char *InFileName, const char *OutFileName, uint8_t 
 
   THOPEncryptorFnc EncryptorFnc = xorGetProperHOPEncryptorFnc(KeyBuf);
   CheckSum = (ssize_t)EncryptorFnc(KeyBuf, (uint8_t *)(&SaltData), KeyCheckSum, Len-BMP_FILE_HEADER_LEN, Data + BMP_FILE_HEADER_LEN); 
-  if ((FDesc = creat(OutFileName, 777)) == -1)
+  FDesc = open(OutFileName, O_CREAT | O_TRUNC | O_WRONLY, 777);
+  if (FDesc == -1) // FDesc = creat(OutFileName, 777)
   {
-    printf("Error in creating output file!\n");
+    printf("Error in creating output file: %s!\n", OutFileName);
     free(Data);
     return -1;
   }
@@ -1980,8 +2037,8 @@ ssize_t EncryptBMPFile(const char *InFileName, const char *OutFileName, uint8_t 
   return CheckSum;
 }
 
-#define SAMPLE_FILE_PATH "/home/ikizir/Downloads/panda.bmp"
-  #define SAMPLE_OUT_FILE_PATH "/home/ikizir/Downloads/panda_enc.bmp"
+#define SAMPLE_FILE_PATH "/Users/ikizir/Downloads/panda.bmp"
+  #define SAMPLE_OUT_FILE_PATH "/Users/ikizir/Downloads/panda_enc.bmp"
 void TestEncryptFile(unsigned NumJumps, unsigned BodyLen)
 {
   unsigned long long int ChkSum;
@@ -2030,84 +2087,85 @@ void TestEncryptBMPFile(const char *InFileName, const char *OutFileName, unsigne
 
 void CreateVisualProofs()
 {
-  TestEncryptBMPFile("/home/ikizir/Downloads/allzero.bmp", "/home/ikizir/Downloads/allzero_enc_2J_64.bmp", 2, 64);
-  TestEncryptBMPFile("/home/ikizir/Downloads/allzero.bmp", "/home/ikizir/Downloads/allzero_enc_3J_64.bmp", 3, 64);
-  TestEncryptBMPFile("/home/ikizir/Downloads/allzero.bmp", "/home/ikizir/Downloads/allzero_enc_4J_64.bmp", 4, 64);
+  TestEncryptBMPFile("/Users/ikizir/Downloads/allzero.bmp", "/Users/ikizir/Downloads/allzero_enc_2J_64.bmp", 2, 64);
+  TestEncryptBMPFile("/Users/ikizir/Downloads/allzero.bmp", "/Users/ikizir/Downloads/allzero_enc_3J_64.bmp", 3, 64);
+  TestEncryptBMPFile("/Users/ikizir/Downloads/allzero.bmp", "/Users/ikizir/Downloads/allzero_enc_4J_64.bmp", 4, 64);
   
-  TestEncryptBMPFile("/home/ikizir/Downloads/allzero.bmp", "/home/ikizir/Downloads/allzero_enc_2J_128.bmp", 2, 128);
-  TestEncryptBMPFile("/home/ikizir/Downloads/allzero.bmp", "/home/ikizir/Downloads/allzero_enc_3J_128.bmp", 3, 128);
-  TestEncryptBMPFile("/home/ikizir/Downloads/allzero.bmp", "/home/ikizir/Downloads/allzero_enc_4J_128.bmp", 4, 128);
+  TestEncryptBMPFile("/Users/ikizir/Downloads/allzero.bmp", "/Users/ikizir/Downloads/allzero_enc_2J_128.bmp", 2, 128);
+  TestEncryptBMPFile("/Users/ikizir/Downloads/allzero.bmp", "/Users/ikizir/Downloads/allzero_enc_3J_128.bmp", 3, 128);
+  TestEncryptBMPFile("/Users/ikizir/Downloads/allzero.bmp", "/Users/ikizir/Downloads/allzero_enc_4J_128.bmp", 4, 128);
   
-  TestEncryptBMPFile("/home/ikizir/Downloads/allzero.bmp", "/home/ikizir/Downloads/allzero_enc_2J_256.bmp", 2, 256);
-  TestEncryptBMPFile("/home/ikizir/Downloads/allzero.bmp", "/home/ikizir/Downloads/allzero_enc_3J_256.bmp", 3, 256);
-  TestEncryptBMPFile("/home/ikizir/Downloads/allzero.bmp", "/home/ikizir/Downloads/allzero_enc_4J_256.bmp", 4, 256);
+  TestEncryptBMPFile("/Users/ikizir/Downloads/allzero.bmp", "/Users/ikizir/Downloads/allzero_enc_2J_256.bmp", 2, 256);
+  TestEncryptBMPFile("/Users/ikizir/Downloads/allzero.bmp", "/Users/ikizir/Downloads/allzero_enc_3J_256.bmp", 3, 256);
+  TestEncryptBMPFile("/Users/ikizir/Downloads/allzero.bmp", "/Users/ikizir/Downloads/allzero_enc_4J_256.bmp", 4, 256);
   
-  TestEncryptBMPFile("/home/ikizir/Downloads/panda.bmp", "/home/ikizir/Downloads/panda_enc_2J_64.bmp", 2, 64);
-  TestEncryptBMPFile("/home/ikizir/Downloads/panda.bmp", "/home/ikizir/Downloads/panda_enc_3J_64.bmp", 3, 64);
-  TestEncryptBMPFile("/home/ikizir/Downloads/panda.bmp", "/home/ikizir/Downloads/panda_enc_4J_64.bmp", 4, 64);
+  TestEncryptBMPFile("/Users/ikizir/Downloads/panda.bmp", "/Users/ikizir/Downloads/panda_enc_2J_64.bmp", 2, 64);
+  TestEncryptBMPFile("/Users/ikizir/Downloads/panda.bmp", "/Users/ikizir/Downloads/panda_enc_3J_64.bmp", 3, 64);
+  TestEncryptBMPFile("/Users/ikizir/Downloads/panda.bmp", "/Users/ikizir/Downloads/panda_enc_4J_64.bmp", 4, 64);
   
-  TestEncryptBMPFile("/home/ikizir/Downloads/panda.bmp", "/home/ikizir/Downloads/panda_enc_2J_128.bmp", 2, 128);
-  TestEncryptBMPFile("/home/ikizir/Downloads/panda.bmp", "/home/ikizir/Downloads/panda_enc_3J_128.bmp", 3, 128);
-  TestEncryptBMPFile("/home/ikizir/Downloads/panda.bmp", "/home/ikizir/Downloads/panda_enc_4J_128.bmp", 4, 128);
+  TestEncryptBMPFile("/Users/ikizir/Downloads/panda.bmp", "/Users/ikizir/Downloads/panda_enc_2J_128.bmp", 2, 128);
+  TestEncryptBMPFile("/Users/ikizir/Downloads/panda.bmp", "/Users/ikizir/Downloads/panda_enc_3J_128.bmp", 3, 128);
+  TestEncryptBMPFile("/Users/ikizir/Downloads/panda.bmp", "/Users/ikizir/Downloads/panda_enc_4J_128.bmp", 4, 128);
   
-  TestEncryptBMPFile("/home/ikizir/Downloads/panda.bmp", "/home/ikizir/Downloads/panda_enc_2J_256.bmp", 2, 256);
-  TestEncryptBMPFile("/home/ikizir/Downloads/panda.bmp", "/home/ikizir/Downloads/panda_enc_3J_256.bmp", 3, 256);
-  TestEncryptBMPFile("/home/ikizir/Downloads/panda.bmp", "/home/ikizir/Downloads/panda_enc_4J_256.bmp", 4, 256);
+  TestEncryptBMPFile("/Users/ikizir/Downloads/panda.bmp", "/Users/ikizir/Downloads/panda_enc_2J_256.bmp", 2, 256);
+  TestEncryptBMPFile("/Users/ikizir/Downloads/panda.bmp", "/Users/ikizir/Downloads/panda_enc_3J_256.bmp", 3, 256);
+  TestEncryptBMPFile("/Users/ikizir/Downloads/panda.bmp", "/Users/ikizir/Downloads/panda_enc_4J_256.bmp", 4, 256);
   
-  TestEncryptBMPFile("/home/ikizir/Downloads/Bitmap1.bmp", "/home/ikizir/Downloads/Bitmap1_enc_2J_64.bmp", 2, 64);
-  TestEncryptBMPFile("/home/ikizir/Downloads/Bitmap1.bmp", "/home/ikizir/Downloads/Bitmap1_enc_3J_64.bmp", 3, 64);
-  TestEncryptBMPFile("/home/ikizir/Downloads/Bitmap1.bmp", "/home/ikizir/Downloads/Bitmap1_enc_4J_64.bmp", 4, 64);
+  TestEncryptBMPFile("/Users/ikizir/Downloads/Bitmap1.bmp", "/Users/ikizir/Downloads/Bitmap1_enc_2J_64.bmp", 2, 64);
+  TestEncryptBMPFile("/Users/ikizir/Downloads/Bitmap1.bmp", "/Users/ikizir/Downloads/Bitmap1_enc_3J_64.bmp", 3, 64);
+  TestEncryptBMPFile("/Users/ikizir/Downloads/Bitmap1.bmp", "/Users/ikizir/Downloads/Bitmap1_enc_4J_64.bmp", 4, 64);
   
-  TestEncryptBMPFile("/home/ikizir/Downloads/Bitmap1.bmp", "/home/ikizir/Downloads/Bitmap1_enc_2J_128.bmp", 2, 128);
-  TestEncryptBMPFile("/home/ikizir/Downloads/Bitmap1.bmp", "/home/ikizir/Downloads/Bitmap1_enc_3J_128.bmp", 3, 128);
-  TestEncryptBMPFile("/home/ikizir/Downloads/Bitmap1.bmp", "/home/ikizir/Downloads/Bitmap1_enc_4J_128.bmp", 4, 128);
+  TestEncryptBMPFile("/Users/ikizir/Downloads/Bitmap1.bmp", "/Users/ikizir/Downloads/Bitmap1_enc_2J_128.bmp", 2, 128);
+  TestEncryptBMPFile("/Users/ikizir/Downloads/Bitmap1.bmp", "/Users/ikizir/Downloads/Bitmap1_enc_3J_128.bmp", 3, 128);
+  TestEncryptBMPFile("/Users/ikizir/Downloads/Bitmap1.bmp", "/Users/ikizir/Downloads/Bitmap1_enc_4J_128.bmp", 4, 128);
   
-  TestEncryptBMPFile("/home/ikizir/Downloads/Bitmap1.bmp", "/home/ikizir/Downloads/Bitmap1_enc_2J_256.bmp", 2, 256);
-  TestEncryptBMPFile("/home/ikizir/Downloads/Bitmap1.bmp", "/home/ikizir/Downloads/Bitmap1_enc_3J_256.bmp", 3, 256);
-  TestEncryptBMPFile("/home/ikizir/Downloads/Bitmap1.bmp", "/home/ikizir/Downloads/Bitmap1_enc_4J_256.bmp", 4, 256);
+  TestEncryptBMPFile("/Users/ikizir/Downloads/Bitmap1.bmp", "/Users/ikizir/Downloads/Bitmap1_enc_2J_256.bmp", 2, 256);
+  TestEncryptBMPFile("/Users/ikizir/Downloads/Bitmap1.bmp", "/Users/ikizir/Downloads/Bitmap1_enc_3J_256.bmp", 3, 256);
+  TestEncryptBMPFile("/Users/ikizir/Downloads/Bitmap1.bmp", "/Users/ikizir/Downloads/Bitmap1_enc_4J_256.bmp", 4, 256);
   
-  TestEncryptBMPFile("/home/ikizir/Downloads/Viking.bmp", "/home/ikizir/Downloads/Viking_enc_2J_64.bmp", 2, 64);
-  TestEncryptBMPFile("/home/ikizir/Downloads/Viking.bmp", "/home/ikizir/Downloads/Viking_enc_3J_64.bmp", 3, 64);
-  TestEncryptBMPFile("/home/ikizir/Downloads/Viking.bmp", "/home/ikizir/Downloads/Viking_enc_4J_64.bmp", 4, 64);
+  TestEncryptBMPFile("/Users/ikizir/Downloads/Viking.bmp", "/Users/ikizir/Downloads/Viking_enc_2J_64.bmp", 2, 64);
+  TestEncryptBMPFile("/Users/ikizir/Downloads/Viking.bmp", "/Users/ikizir/Downloads/Viking_enc_3J_64.bmp", 3, 64);
+  TestEncryptBMPFile("/Users/ikizir/Downloads/Viking.bmp", "/Users/ikizir/Downloads/Viking_enc_4J_64.bmp", 4, 64);
   
-  TestEncryptBMPFile("/home/ikizir/Downloads/Viking.bmp", "/home/ikizir/Downloads/Viking_enc_2J_128.bmp", 2, 128);
-  TestEncryptBMPFile("/home/ikizir/Downloads/Viking.bmp", "/home/ikizir/Downloads/Viking_enc_3J_128.bmp", 3, 128);
-  TestEncryptBMPFile("/home/ikizir/Downloads/Viking.bmp", "/home/ikizir/Downloads/Viking_enc_4J_128.bmp", 4, 128);
+  TestEncryptBMPFile("/Users/ikizir/Downloads/Viking.bmp", "/Users/ikizir/Downloads/Viking_enc_2J_128.bmp", 2, 128);
+  TestEncryptBMPFile("/Users/ikizir/Downloads/Viking.bmp", "/Users/ikizir/Downloads/Viking_enc_3J_128.bmp", 3, 128);
+  TestEncryptBMPFile("/Users/ikizir/Downloads/Viking.bmp", "/Users/ikizir/Downloads/Viking_enc_4J_128.bmp", 4, 128);
   
-  TestEncryptBMPFile("/home/ikizir/Downloads/Viking.bmp", "/home/ikizir/Downloads/Viking_enc_2J_256.bmp", 2, 256);
-  TestEncryptBMPFile("/home/ikizir/Downloads/Viking.bmp", "/home/ikizir/Downloads/Viking_enc_3J_256.bmp", 3, 256);
-  TestEncryptBMPFile("/home/ikizir/Downloads/Viking.bmp", "/home/ikizir/Downloads/Viking_enc_4J_256.bmp", 4, 256);
+  TestEncryptBMPFile("/Users/ikizir/Downloads/Viking.bmp", "/Users/ikizir/Downloads/Viking_enc_2J_256.bmp", 2, 256);
+  TestEncryptBMPFile("/Users/ikizir/Downloads/Viking.bmp", "/Users/ikizir/Downloads/Viking_enc_3J_256.bmp", 3, 256);
+  TestEncryptBMPFile("/Users/ikizir/Downloads/Viking.bmp", "/Users/ikizir/Downloads/Viking_enc_4J_256.bmp", 4, 256);
   
-  TestEncryptBMPFile("/home/ikizir/Downloads/B.bmp", "/home/ikizir/Downloads/B_enc_2J_64.bmp", 2, 64);
-  TestEncryptBMPFile("/home/ikizir/Downloads/B.bmp", "/home/ikizir/Downloads/B_enc_3J_64.bmp", 3, 64);
-  TestEncryptBMPFile("/home/ikizir/Downloads/B.bmp", "/home/ikizir/Downloads/B_enc_4J_64.bmp", 4, 64);
+  TestEncryptBMPFile("/Users/ikizir/Downloads/B.bmp", "/Users/ikizir/Downloads/B_enc_2J_64.bmp", 2, 64);
+  TestEncryptBMPFile("/Users/ikizir/Downloads/B.bmp", "/Users/ikizir/Downloads/B_enc_3J_64.bmp", 3, 64);
+  TestEncryptBMPFile("/Users/ikizir/Downloads/B.bmp", "/Users/ikizir/Downloads/B_enc_4J_64.bmp", 4, 64);
   
-  TestEncryptBMPFile("/home/ikizir/Downloads/B.bmp", "/home/ikizir/Downloads/B_enc_2J_128.bmp", 2, 128);
-  TestEncryptBMPFile("/home/ikizir/Downloads/B.bmp", "/home/ikizir/Downloads/B_enc_3J_128.bmp", 3, 128);
-  TestEncryptBMPFile("/home/ikizir/Downloads/B.bmp", "/home/ikizir/Downloads/B_enc_4J_128.bmp", 4, 128);
+  TestEncryptBMPFile("/Users/ikizir/Downloads/B.bmp", "/Users/ikizir/Downloads/B_enc_2J_128.bmp", 2, 128);
+  TestEncryptBMPFile("/Users/ikizir/Downloads/B.bmp", "/Users/ikizir/Downloads/B_enc_3J_128.bmp", 3, 128);
+  TestEncryptBMPFile("/Users/ikizir/Downloads/B.bmp", "/Users/ikizir/Downloads/B_enc_4J_128.bmp", 4, 128);
   
-  TestEncryptBMPFile("/home/ikizir/Downloads/B.bmp", "/home/ikizir/Downloads/B_enc_2J_256.bmp", 2, 256);
-  TestEncryptBMPFile("/home/ikizir/Downloads/B.bmp", "/home/ikizir/Downloads/B_enc_3J_256.bmp", 3, 256);
-  TestEncryptBMPFile("/home/ikizir/Downloads/B.bmp", "/home/ikizir/Downloads/B_enc_4J_256.bmp", 4, 256);
+  TestEncryptBMPFile("/Users/ikizir/Downloads/B.bmp", "/Users/ikizir/Downloads/B_enc_2J_256.bmp", 2, 256);
+  TestEncryptBMPFile("/Users/ikizir/Downloads/B.bmp", "/Users/ikizir/Downloads/B_enc_3J_256.bmp", 3, 256);
+  TestEncryptBMPFile("/Users/ikizir/Downloads/B.bmp", "/Users/ikizir/Downloads/B_enc_4J_256.bmp", 4, 256);
   
-  TestEncryptBMPFile("/home/ikizir/Downloads/penguen.bmp", "/home/ikizir/Downloads/penguen_enc_2J_64.bmp", 2, 64);
-  TestEncryptBMPFile("/home/ikizir/Downloads/penguen.bmp", "/home/ikizir/Downloads/penguen_enc_3J_64.bmp", 3, 64);
-  TestEncryptBMPFile("/home/ikizir/Downloads/penguen.bmp", "/home/ikizir/Downloads/penguen_enc_4J_64.bmp", 4, 64);
+  TestEncryptBMPFile("/Users/ikizir/Downloads/penguen.bmp", "/Users/ikizir/Downloads/penguen_enc_2J_64.bmp", 2, 64);
+  TestEncryptBMPFile("/Users/ikizir/Downloads/penguen.bmp", "/Users/ikizir/Downloads/penguen_enc_3J_64.bmp", 3, 64);
+  TestEncryptBMPFile("/Users/ikizir/Downloads/penguen.bmp", "/Users/ikizir/Downloads/penguen_enc_4J_64.bmp", 4, 64);
   
-  TestEncryptBMPFile("/home/ikizir/Downloads/penguen.bmp", "/home/ikizir/Downloads/penguen_enc_2J_128.bmp", 2, 128);
-  TestEncryptBMPFile("/home/ikizir/Downloads/penguen.bmp", "/home/ikizir/Downloads/penguen_enc_3J_128.bmp", 3, 128);
-  TestEncryptBMPFile("/home/ikizir/Downloads/penguen.bmp", "/home/ikizir/Downloads/penguen_enc_4J_128.bmp", 4, 128);
+  TestEncryptBMPFile("/Users/ikizir/Downloads/penguen.bmp", "/Users/ikizir/Downloads/penguen_enc_2J_128.bmp", 2, 128);
+  TestEncryptBMPFile("/Users/ikizir/Downloads/penguen.bmp", "/Users/ikizir/Downloads/penguen_enc_3J_128.bmp", 3, 128);
+  TestEncryptBMPFile("/Users/ikizir/Downloads/penguen.bmp", "/Users/ikizir/Downloads/penguen_enc_4J_128.bmp", 4, 128);
   
-  TestEncryptBMPFile("/home/ikizir/Downloads/penguen.bmp", "/home/ikizir/Downloads/penguen_enc_2J_256.bmp", 2, 256);
-  TestEncryptBMPFile("/home/ikizir/Downloads/penguen.bmp", "/home/ikizir/Downloads/penguen_enc_3J_256.bmp", 3, 256);
-  TestEncryptBMPFile("/home/ikizir/Downloads/penguen.bmp", "/home/ikizir/Downloads/penguen_enc_4J_256.bmp", 4, 256);
+  TestEncryptBMPFile("/Users/ikizir/Downloads/penguen.bmp", "/Users/ikizir/Downloads/penguen_enc_2J_256.bmp", 2, 256);
+  TestEncryptBMPFile("/Users/ikizir/Downloads/penguen.bmp", "/Users/ikizir/Downloads/penguen_enc_3J_256.bmp", 3, 256);
+  TestEncryptBMPFile("/Users/ikizir/Downloads/penguen.bmp", "/Users/ikizir/Downloads/penguen_enc_4J_256.bmp", 4, 256);
 }
 
 
 int main()
 {
   uint32_t BodyLen = 256;
-
+  srand((unsigned) time(NULL));
+  
   //printf("CRC: %u\n", digital_crc32((uint8_t *)"A", 1));
   //printf("CRC: %u\n", digital_crc32((uint8_t *)"Ismail", 6));
   Test1(2, BodyLen);
@@ -2116,7 +2174,7 @@ int main()
   
   
   CreateVisualProofs();
-//  exit(-1);
+  //exit(-1);
   
   //CircularShiftTest();
   //uint32_t TestSampleLength = 8192;
