@@ -818,7 +818,7 @@ int main(int argc, char **argv)
 	memset(ctx.hx_mask, 0, ctx.sz_hx);
 
 	if (opt_r)
-		getrandom(ctx.hx_orig, ctx.sz_hx, 0);
+		fill_random(ctx.hx_orig, ctx.sz_hx);
 	if (arg_k)
 		memcpy(ctx.hx_orig->key, raw_k, raw_k_len);
 

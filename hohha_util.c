@@ -4,6 +4,19 @@
 
 unsigned hohha_dbg_level;
 
+void fill_random(void *buf, size_t len)
+{
+#if defined(getrandom)
+	getrandom(buf, len, 0);
+#elif defined(__NR_getrandom)
+	syscall(__NR_getrandom, buf, len, 0);
+#else
+	FILE *f = fopen("/dev/urandom", "r");
+	fread(buf, len, 1, f);
+	fclose(f);
+#endif
+}
+
 /* ---- crc32: table data from HohhaDynamicXor.c ---- */
 
 const uint32_t crc32_table[256] = {
