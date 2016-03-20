@@ -13,6 +13,14 @@ extern unsigned hohha_dbg_level;
 #define vdbg(args...) do { if (hohha_dbg_level > 1) pr(args); } while (0)
 #define vvdbg(args...) do { if (hohha_dbg_level > 2) pr(args); } while (0)
 
+#define NAME_HEAP_SORT(T, O) \
+	heap_sort_ ## T ## _ ## O
+#define DECL_HEAP_SORT(T, TYPE, O) \
+	void NAME_HEAP_SORT(T, O)(TYPE *w, size_t *v, size_t a, size_t z)
+DECL_HEAP_SORT(u8, uint8_t, gt);
+DECL_HEAP_SORT(u32, uint32_t, gt);
+DECL_HEAP_SORT(u32, uint32_t, lt);
+
 void fill_random(void *buf, size_t len);
 
 uint32_t crc32_byte(uint32_t crc, uint8_t word);
@@ -22,8 +30,6 @@ int b64_encode(const uint8_t* data_buf, size_t data_len,
 	       char* out_buf, size_t out_len);
 int b64_decode(const char *in_buf, size_t in_len,
 	       uint8_t *out_buf, size_t *out_len);
-
-void merge_sort(size_t *idx, size_t *val, size_t *tmp, size_t sa, size_t sz);
 
 size_t max_idx(size_t *val, size_t sz);
 

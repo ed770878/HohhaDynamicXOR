@@ -4,6 +4,58 @@
 
 unsigned hohha_dbg_level;
 
+#define SWAP(T, A, B) \
+	({T tmp; tmp = A; A = B; B = tmp;})
+
+#define NAME_HEAPIFY(T, O) \
+	heapify_ ## T ## _ ## O
+#define DECL_HEAPIFY(T, TYPE, O) \
+	void NAME_HEAPIFY(T, O)(TYPE *w, size_t *v, size_t a, size_t z)
+
+#define DEFN_HEAPIFY(T, TYPE, O, OP) \
+	DECL_HEAPIFY(T, TYPE, O) 				\
+{								\
+	size_t l, r;						\
+								\
+	for (;;) {						\
+		l = (a << 1) + 1;				\
+		r = (a << 1) + 2;				\
+		if (l >= z)					\
+			break;					\
+		if (r < z && v[l] OP v[r])			\
+			l = r;					\
+		if (v[l] OP v[a])				\
+			break;					\
+		SWAP(size_t, v[a], v[l]);			\
+		SWAP(TYPE, w[a], w[l]);				\
+		a = l;						\
+	}							\
+}
+
+#define DEFN_HEAP_SORT(T, TYPE, O, OP) \
+	DEFN_HEAPIFY(T, TYPE, O, OP)				\
+	DECL_HEAP_SORT(T, TYPE, O) 				\
+{								\
+	size_t i;						\
+								\
+	if (!z)							\
+		return;						\
+								\
+	for (i = z >> 1; i <= z; --i) {				\
+		NAME_HEAPIFY(T, O)(w, v, i, z);			\
+	}							\
+								\
+	while (--z) {						\
+		SWAP(size_t, v[0], v[z]);			\
+		SWAP(TYPE, w[0], w[z]);				\
+		NAME_HEAPIFY(T, O)(w, v, 0, z);			\
+	}							\
+}
+
+DEFN_HEAP_SORT(u8, uint8_t, gt, >=)
+DEFN_HEAP_SORT(u32, uint32_t, gt, >=)
+DEFN_HEAP_SORT(u32, uint32_t, lt, <=)
+
 void fill_random(void *buf, size_t len)
 {
 #if defined(getrandom)
