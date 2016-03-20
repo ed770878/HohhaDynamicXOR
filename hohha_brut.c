@@ -717,6 +717,26 @@ static void hxb_ctx_brut_m(struct hxb_ctx *ctx)
 	hxb_ord_prev(ctx);
 }
 
+static void hxb_ctx_brut_m_leaf(struct hxb_ctx *ctx)
+{
+	void *save;
+	size_t i;
+
+	ctx->ord_next = ctx->ord_depth;
+
+	for (i = ctx->ord_depth - 1; i < ctx->ord_count; ++i) {
+		while (!hxb_ctx_next_key(ctx, ctx->ord_m[i])) {
+			save = hxb_ctx_save(ctx);
+
+			hxb_ctx_brut(ctx);
+
+			hxb_ctx_restore(ctx, save);
+		}
+	}
+
+	ctx->ord_next = ctx->ord_depth - 1;
+}
+
 static void hxb_ctx_brut(struct hxb_ctx *ctx)
 {
 	if (hxb_ctx_adv(ctx)) {
@@ -761,7 +781,10 @@ static void hxb_ctx_brut(struct hxb_ctx *ctx)
 	if (hxb_ctx_brut_v(ctx))
 		return;
 
-	hxb_ctx_brut_m(ctx);
+	if (1 || ctx->ord_next < ctx->ord_depth - 1)
+		hxb_ctx_brut_m(ctx);
+	else
+		hxb_ctx_brut_m_leaf(ctx);
 }
 
 static void hxb_ctx_search(struct hxb_ctx *ctx)
